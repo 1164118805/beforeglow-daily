@@ -91,8 +91,8 @@ def titles(d):
     return out
 
 
-AI_URL = os.environ.get("LLM_BASE_URL", "https://models.github.ai/inference/chat/completions")
-AI_MODEL = os.environ.get("LLM_MODEL", "openai/gpt-4o-mini")
+AI_URL = os.environ.get("LLM_BASE_URL") or "https://models.github.ai/inference/chat/completions"
+AI_MODEL = os.environ.get("LLM_MODEL") or "openai/gpt-4o-mini"
 AI_SYS = (
     "你是抖音娱乐主播的直播编导。给每个热榜话题写直播时能直接念的口语。不要解释概念，不要教程腔，不要套话，不要「作为一个AI」。\n"
     "k=类型，只能是「热梗」或「话题」。只有真正在玩梗、能接梗的标题才写「热梗」，新闻/健康/社会/产品发布/影视剧情讨论/知识问答/体育比分一律写「话题」。\n"
@@ -175,7 +175,7 @@ def _ai_fill(token, items):
 
 
 def ai_enrich(lst):
-    token = os.environ.get("LLM_API_KEY") or os.environ.get("GITHUB_TOKEN")
+    token = (os.environ.get("LLM_API_KEY") or "").strip() or os.environ.get("GITHUB_TOKEN")
     if not token:
         print("AI: no token, keep templates")
         return lst
@@ -279,7 +279,7 @@ def main():
     lst.sort(key=lambda x: -x["h"])
     try:
         lst = ai_enrich(lst)
-        token = os.environ.get("LLM_API_KEY") or os.environ.get("GITHUB_TOKEN")
+        token = (os.environ.get("LLM_API_KEY") or "").strip() or os.environ.get("GITHUB_TOKEN")
         if token:
             missing = [x for x in lst if not x.get("from") or not x.get("ex")]
             if missing:

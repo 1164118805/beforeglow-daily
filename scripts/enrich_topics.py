@@ -8,7 +8,6 @@
   python3 scripts/enrich_topics.py            # 增量（默认 30 天内不重复跑）
   python3 scripts/enrich_topics.py --force    # 强制全量重跑
 """
-# KICK: 触发一次云端补全
 import json
 import os
 import re
@@ -21,7 +20,8 @@ OUT = "topics_ai.json"
 AI_URL = os.environ.get("LLM_BASE_URL", "https://models.github.ai/inference/chat/completions")
 AI_MODEL = os.environ.get("LLM_MODEL", "openai/gpt-4o-mini")
 TOKEN = os.environ.get("LLM_API_KEY") or os.environ.get("GITHUB_TOKEN")
-BATCH = 8
+BATCH = 10
+DEADLINE = 9 * 60  # 全流程最多跑 9 分钟，超时就写已有的
 MAX_AGE = 30 * 24 * 3600
 
 SYS = (
@@ -74,7 +74,7 @@ def load_pool():
     return items
 
 
-def ai_batch(chunk, old_map):
+def ai_batch(chunk, old_map, timeout=60):
     """chunk: [{t,k,o,r}] -> {t:{mean,from,tone,scene,ex}}"""
     payload = []
     for x in chunk:
@@ -99,7 +99,7 @@ def ai_batch(chunk, old_map):
         data=json.dumps(body).encode("utf-8"),
         headers={"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=180) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         d = json.loads(r.read().decode("utf-8"))
     content = d["choices"][0]["message"]["content"]
     content = re.sub(r"^```(?:json)?|```$", "", content.strip(), flags=re.M).strip()
@@ -150,9 +150,13 @@ def main():
         return
 
     done, fail = 0, 0
+    t0 = time.time()
     for i in range(0, len(items), BATCH):
         chunk = items[i:i + BATCH]
-        for attempt in range(3):
+        if time.time() - t0 > DEADLINE:
+            print("deadline reached, keep what we have")
+            break
+        for attempt in range(2):
             try:
                 got = ai_batch(chunk, old_map)
                 for t, rec in got.items():
@@ -162,11 +166,14 @@ def main():
                 break
             except Exception as e:
                 print("batch %d retry %d %r" % (i, attempt + 1, e))
-                time.sleep(3 * (attempt + 1))
+                time.sleep(2)
         else:
             fail += len(chunk)
         time.sleep(1.5)
 
+    if not old_map:
+        print("::error title=AI 全失败::一条都没生成，先不写文件")
+        sys.exit(1)
     out = {"v": 1, "ts": int(time.time()), "n": len(old_map), "map": old_map}
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))

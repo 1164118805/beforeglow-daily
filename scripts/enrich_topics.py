@@ -20,16 +20,11 @@ OUT = "topics_ai.json"
 AI_URL = os.environ.get("LLM_BASE_URL") or "https://models.github.ai/inference/chat/completions"
 AI_MODEL = os.environ.get("LLM_MODEL") or "openai/gpt-4o-mini"
 # 候选端点/模型（第一个探测成功的会被采用）
-CANDIDATES = [
-    ("https://models.github.ai/inference/chat/completions", "openai/gpt-4o-mini"),
-    ("https://models.github.ai/v1/chat/completions", "openai/gpt-4o-mini"),
-    ("https://models.github.ai/inference/v1/chat/completions", "openai/gpt-4o-mini"),
-    ("https://models.github.ai/chat/completions", "openai/gpt-4o-mini"),
-    ("https://api.github.ai/models/inference/chat/completions", "openai/gpt-4o-mini"),
-    ("https://models.github.ai/inference", "openai/gpt-4o-mini"),
-]
-if os.environ.get("LLM_BASE_URL"):
-    CANDIDATES.insert(0, (os.environ["LLM_BASE_URL"], AI_MODEL))
+_BASE = (os.environ.get("LLM_BASE_URL") or "").strip()
+CANDIDATES = []
+if _BASE:
+    CANDIDATES.append((_BASE, AI_MODEL))
+CANDIDATES.append(("https://models.github.ai/inference/chat/completions", AI_MODEL))
 TOKEN = (os.environ.get("LLM_API_KEY") or "").strip() or os.environ.get("GITHUB_TOKEN")
 BATCH = 10
 DEADLINE = 9 * 60  # 全流程最多跑 9 分钟，超时就写已有的
@@ -173,8 +168,8 @@ def main():
         except Exception as e:
             print("AI probe fail:", url, model, repr(e)[:200])
     if not picked:
-        print("::error title=AI 不可用::所有候选端点都失败，看上面的 RAW 行")
-        sys.exit(1)
+        print("::warning title=AI 不可用::所有候选端点都失败，本次跳过 AI 补全（站点仍用手写内容）")
+        return
 
     items = load_pool()
     print("total titles:", len(items))

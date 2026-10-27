@@ -100,6 +100,7 @@ AI_SYS = (
     "from=出处（这个梗/词怎么来的：哪部剧/哪个视频/哪个平台/大概什么时候；不确定写「暂无明确出处」，不要编）；mean=含义（原本什么意思、现在怎么用）；"
     "tone=调性（轻松搞笑/自嘲/温柔/损友…）；scene=场景（直播里什么时候用，列2-3个）；ex=使用示范（2-3条对话，用「观众：… / 你：…」格式，换行分隔）；"
     "detail=详细版（按五段写：梗是什么/出处来源/情绪调性/直播适用场景/避雷禁区；最后加2-3条实操对话；用换行分隔）；"
+    "from/mean/tone/scene/ex 不要带「出处：」「含义：」等前缀，前端会加标签。"
     "新闻、健康、社会、产品发布、影视剧情讨论、知识问答、体育比分一律写「话题」。"
     "o=开口（1句，能直接说）；r=接话（1句）；e=延伸（1句）；a=避坑（1句）。"
     "od/rd/ed/ad=详细版，各2-3句，带具体背景、为什么、例子，必须有信息量。"
@@ -158,7 +159,10 @@ def ai_enrich(lst):
             for key in ("from", "mean", "tone", "scene", "ex", "detail", "o", "r", "e", "a", "od", "rd", "ed", "ad"):
                 v = item.get(key)
                 if isinstance(v, str) and v.strip():
-                    x[key] = v.strip()
+                    v = v.strip()
+                    if key in ("from", "mean", "tone", "scene"):
+                        v = re.sub(r"^(出处|含义|调性|场景|是什么)[：:]\s*", "", v)
+                    x[key] = v
             n += 1
         print("AI batch", i, "ok", n)
     return lst

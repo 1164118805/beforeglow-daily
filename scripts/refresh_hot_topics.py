@@ -16,6 +16,7 @@ SOURCES = [
     ("B站", "https://api.bilibili.com/x/web-interface/ranking/v2?rid=0&type=all"),
     ("微博", "tophub:KqndgxeLl9"),
     ("知乎", "tophub:mproPpoq6O"),
+    ("小红书", "rebang:xiaohongshu"),
     ("抖音", "https://api.vvhan.com/api/hotlist/douyinHot"),
     ("微博", "https://api.vvhan.com/api/hotlist/wbHot"),
     ("知乎", "https://api.vvhan.com/api/hotlist/zhihuHot"),
@@ -36,6 +37,18 @@ BAD = re.compile(
 
 
 def fetch(url):
+    if url.startswith("rebang:"):
+        key = url.split(":", 1)[1]
+        req = urllib.request.Request("https://rebang.today/?tab=" + key, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            raw = r.read().decode("utf-8", errors="ignore")
+        items = []
+        for m in re.finditer(r'href="(https?://www\.xiaohongshu\.com/[^"]+)"[^>]*>(.*?)</a>', raw, re.S):
+            t = re.sub(r"<[^>]+>", "", m.group(2))
+            t = html.unescape(t).replace("\n", " ").strip()
+            if t:
+                items.append({"title": t})
+        return {"data": items}
     if url.startswith("tophub:"):
         node = url.split(":", 1)[1]
         req = urllib.request.Request("https://tophub.today/n/" + node, headers={"User-Agent": UA})
@@ -146,12 +159,16 @@ def ai_enrich(lst):
 def main():
     prev = {}
     prev_list = []
+    prev_fields = {}
     if os.path.exists(OUT):
         try:
             old = json.load(open(OUT, encoding="utf-8"))
             prev_list = old.get("list", [])
             for x in prev_list:
                 prev[x.get("t", "")] = int(x.get("d", 1) or 1)
+                f = {k: x[k] for k in ("o", "r", "e", "a", "od", "rd", "ed", "ad") if x.get(k)}
+                if f:
+                    prev_fields[x.get("t", "")] = f
         except Exception as e:
             print("prev read fail", e)
 
@@ -180,9 +197,12 @@ def main():
         t = x.get("t")
         if t and p not in ok:
             best[t] = {"p": p, "t": t, "h": min(int(x.get("h", 0) or 0), 500000), "d": int(x.get("d", 1) or 1)}
+            best[t].update(prev_fields.get(t, {}))
     for t, x in fetched.items():
         d = min(7, (prev.get(t, 0) + 1) if t in prev else 1)
         best[t] = {"p": x["p"], "t": t, "h": x["h"], "d": d}
+        if t in prev_fields:
+            best[t].update(prev_fields[t])
 
     lst = list(best.values())
     lst.sort(key=lambda x: -x["h"])
@@ -190,7 +210,7 @@ def main():
         lst = ai_enrich(lst)
     except Exception as e:
         print("AI enrich fail", repr(e))
-    out = {"v": 1, "at": datetime.date.today().isoformat(), "ts": int(time.time()), "note": "全网多平台热榜（每天 06:30 更新，AI 整理）", "list": lst[:60]}
+    out = {"v": 1, "at": datetime.date.today().isoformat(), "ts": int(time.time()), "note": "全网多平台热榜（每天 06:30 更新，AI 整理）", "list": lst[:80]}
     json.dump(out, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     print("saved", len(out["list"]), "from", counts)
     return 0

@@ -19,6 +19,15 @@ SITE = os.environ.get("SITE_BASE", "https://beforeglow-2412.surge.sh")
 OUT = "topics_ai.json"
 AI_URL = os.environ.get("LLM_BASE_URL") or "https://models.github.ai/inference/chat/completions"
 AI_MODEL = os.environ.get("LLM_MODEL") or "openai/gpt-4o-mini"
+# 候选端点/模型（第一个探测成功的会被采用）
+CANDIDATES = [
+    ("https://models.github.ai/inference/chat/completions", "openai/gpt-4o-mini"),
+    ("https://models.github.ai/inference/chat/completions", "openai/gpt-4.1-mini"),
+    ("https://models.github.ai/inference/chat/completions", "gpt-4o-mini"),
+    ("https://models.inference.ai.azure.com/chat/completions", "gpt-4o-mini"),
+]
+if os.environ.get("LLM_BASE_URL"):
+    CANDIDATES.insert(0, (os.environ["LLM_BASE_URL"], AI_MODEL))
 TOKEN = (os.environ.get("LLM_API_KEY") or "").strip() or os.environ.get("GITHUB_TOKEN")
 BATCH = 10
 DEADLINE = 9 * 60  # 全流程最多跑 9 分钟，超时就写已有的
@@ -100,7 +109,12 @@ def ai_batch(chunk, old_map, timeout=60):
         headers={"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"},
     )
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        d = json.loads(r.read().decode("utf-8"))
+        raw = r.read().decode("utf-8", "ignore")
+    try:
+        d = json.loads(raw)
+    except Exception:
+        print("RAW[%s] %s" % (r.status, raw[:300].replace(chr(10), " ")))
+        raise
     content = d["choices"][0]["message"]["content"]
     content = re.sub(r"^```(?:json)?|```$", "", content.strip(), flags=re.M).strip()
     arr = json.loads(content)
@@ -141,6 +155,22 @@ def main():
 
     if not TOKEN:
         print("no token, abort")
+        sys.exit(1)
+
+    global AI_URL, AI_MODEL
+    picked = None
+    for url, model in CANDIDATES:
+        try:
+            AI_URL, AI_MODEL = url, model
+            got = ai_batch([{"t": "测试", "k": "词汇", "o": "你好", "r": "你好呀"}], {}, timeout=40)
+            if got:
+                picked = (url, model)
+                print("AI ok:", url, model)
+                break
+        except Exception as e:
+            print("AI probe fail:", url, model, repr(e)[:200])
+    if not picked:
+        print("::error title=AI 不可用::所有候选端点都失败，看上面的 RAW 行")
         sys.exit(1)
 
     items = load_pool()

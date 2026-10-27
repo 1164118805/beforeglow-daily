@@ -2,6 +2,9 @@ name: Enrich topics with AI
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/enrich_topics.py'
     inputs:
       force:
         description: "强制全量重跑（默认 30 天内不重复）"

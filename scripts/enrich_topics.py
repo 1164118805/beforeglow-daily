@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+把站点上的本地话题/词汇过一遍免费 AI（GitHub Models），生成 topics_ai.json。
+站点前端会自动读取并合并：{v, ts, map:{标题:{mean,from,tone,scene,ex}}}
+
+用法：
+  python3 scripts/enrich_topics.py            # 增量（默认 30 天内不重复跑）
+  python3 scripts/enrich_topics.py --force    # 强制全量重跑
+"""
+import json
+import os
+import re
+import sys
+import time
+import urllib.request
+
+SITE = os.environ.get("SITE_BASE", "https://beforeglow-2412.surge.sh")
+OUT = "topics_ai.json"
+AI_URL = os.environ.get("LLM_BASE_URL", "https://models.github.ai/inference/chat/completions")
+AI_MODEL = os.environ.get("LLM_MODEL", "openai/gpt-4o-mini")
+TOKEN = os.environ.get("LLM_API_KEY") or os.environ.get("GITHUB_TOKEN")
+BATCH = 8
+MAX_AGE = 30 * 24 * 3600
+
+SYS = (
+    "你是中文直播编导，服务对象是抖音娱乐主播。给你一批条目标题（可能是话题、词汇或热梗），"
+    "给每一条写直播里能直接用的小卡片。全部说人话，不要教程腔，不要「作为一个AI」这类废话。\n"
+    "字段：\n"
+    "mean=含义（这是什么、现在大家怎么用它，20-40字，不要复述标题）\n"
+    "from=出处（怎么来的：哪部剧/哪个视频/哪个平台/大概什么时候。"
+    "如果给了「已知出处」就沿用并把它说得更清楚；真的查不到就写「没有单一可考的最初出处」，绝对不要编造剧名、人名、年份）\n"
+    "tone=调性（2-6字，如「自嘲」「温和治愈」「轻松吐槽」）\n"
+    "scene=场景（直播里什么时候用，列2-3个，用「、」隔开）\n"
+    "ex=使用示范（2-3条对话，用「观众：…」换行「你：…」的格式）\n"
+    "严格输出 JSON 数组，每项 {t,mean,from,tone,scene,ex}，t 必须和输入标题一字不差。"
+    "不要 markdown、不要代码块、不要多余解释。"
+)
+
+
+def http_json(url, timeout=40):
+    req = urllib.request.Request(url, headers={"User-Agent": "beforeglow-bot"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def load_pool():
+    """从站点取本地话题与词汇，拼成待处理清单。"""
+    items, seen = [], set()
+    for name, url in (("topics.json", SITE + "/topics.json"), ("vocab.json", SITE + "/vocab.json")):
+        try:
+            d = http_json(url + "?e=" + str(int(time.time())))
+            lst = d.get("list") if isinstance(d, dict) else d
+            print("fetch", name, len(lst or []))
+        except Exception as e:
+            print("fetch fail", name, repr(e))
+            continue
+        for row in lst or []:
+            if not isinstance(row, list) or len(row) < 2:
+                continue
+            t = str(row[1]).strip()
+            if not t or t in seen:
+                continue
+            seen.add(t)
+            items.append({
+                "t": t,
+                "k": str(row[0] or ""),
+                "o": str(row[2] or ""),
+                "r": str(row[3] or ""),
+            })
+    return items
+
+
+def ai_batch(chunk, old_map):
+    """chunk: [{t,k,o,r}] -> {t:{mean,from,tone,scene,ex}}"""
+    payload = []
+    for x in chunk:
+        row = {"t": x["t"], "类型": x["k"], "开口": x["o"], "接话": x["r"]}
+        prev = old_map.get(x["t"]) or {}
+        if prev.get("from"):
+            row["已知出处"] = prev["from"]
+        if prev.get("mean"):
+            row["已知含义"] = prev["mean"]
+        payload.append(row)
+    body = {
+        "model": AI_MODEL,
+        "messages": [
+            {"role": "system", "content": SYS},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+        "temperature": 0.6,
+        "max_tokens": 3500,
+    }
+    req = urllib.request.Request(
+        AI_URL,
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=180) as r:
+        d = json.loads(r.read().decode("utf-8"))
+    content = d["choices"][0]["message"]["content"]
+    content = re.sub(r"^```(?:json)?|```$", "", content.strip(), flags=re.M).strip()
+    arr = json.loads(content)
+    if isinstance(arr, dict):
+        arr = arr.get("items") or arr.get("list") or []
+    out = {}
+    for it in arr:
+        t = str(it.get("t") or "").strip()
+        if not t:
+            continue
+        rec = {}
+        for k in ("mean", "from", "tone", "scene", "ex"):
+            v = it.get(k)
+            if isinstance(v, str) and v.strip():
+                v = re.sub(r"^(含义|出处|调性|场景|使用示范|是什么)[：:]\s*", "", v.strip())
+                rec[k] = v
+        if rec:
+            key = re.sub(r"[「」『』]", "", t)
+            out[key or t] = rec
+    return out
+
+
+def main():
+    force = "--force" in sys.argv
+    old = {}
+    if os.path.exists(OUT):
+        try:
+            old = json.load(open(OUT, encoding="utf-8"))
+        except Exception:
+            old = {}
+    old_map = old.get("map") or {}
+    age = int(time.time()) - int(old.get("ts") or 0)
+    if not force and old_map and age < MAX_AGE:
+        print("skip: topics_ai.json 还新（%.1f 天前），要重跑加 --force" % (age / 86400.0))
+        return
+
+    if not TOKEN:
+        print("no token, abort")
+        sys.exit(1)
+
+    items = load_pool()
+    print("total titles:", len(items))
+    if not items:
+        print("nothing to do")
+        return
+
+    done, fail = 0, 0
+    for i in range(0, len(items), BATCH):
+        chunk = items[i:i + BATCH]
+        for attempt in range(3):
+            try:
+                got = ai_batch(chunk, old_map)
+                for t, rec in got.items():
+                    old_map[t] = rec
+                done += len(got)
+                print("batch %d-%d ok %d" % (i, i + len(chunk) - 1, len(got)))
+                break
+            except Exception as e:
+                print("batch %d retry %d %r" % (i, attempt + 1, e))
+                time.sleep(3 * (attempt + 1))
+        else:
+            fail += len(chunk)
+        time.sleep(1.5)
+
+    out = {"v": 1, "ts": int(time.time()), "n": len(old_map), "map": old_map}
+    with open(OUT, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+    print("wrote %s  map=%d  ok=%d fail=%d" % (OUT, len(old_map), done, fail))
+
+
+if __name__ == "__main__":
+    main()

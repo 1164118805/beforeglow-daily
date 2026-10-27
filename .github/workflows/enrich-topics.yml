@@ -1,0 +1,60 @@
+name: Enrich topics with AI
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "强制全量重跑（默认 30 天内不重复）"
+        required: false
+        default: "true"
+
+permissions:
+  contents: write
+  models: read
+
+concurrency:
+  group: enrich-topics
+  cancel-in-progress: false
+
+jobs:
+  enrich:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Enrich topics
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: |
+          if [ "$FORCE" = "true" ]; then
+            python3 scripts/enrich_topics.py --force
+          else
+            python3 scripts/enrich_topics.py
+          fi
+
+      - name: Commit if changed
+        run: |
+          git config user.name "beforeglow-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add topics_ai.json
+          if git diff --staged --quiet; then
+            echo "no change"
+          else
+            git commit -m "chore: enrich topics $(date -u +%F)"
+            git push
+          fi
+
+      - name: Purge jsDelivr cache
+        run: |
+          sleep 8
+          curl -fsS "https://purge.jsdelivr.net/gh/1164118805/beforeglow-daily@main/topics_ai.json" || true

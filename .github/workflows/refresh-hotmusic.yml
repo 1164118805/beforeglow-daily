@@ -37,11 +37,19 @@ jobs:
           LLM_MODEL: ${{ vars.LLM_MODEL }}
         run: python3 scripts/refresh_hot_topics.py
 
+      - name: Enrich topics (30 天内不重复)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+        run: python3 scripts/enrich_topics.py
+
       - name: Commit if changed
         run: |
           git config user.name "beforeglow-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add hotmusic.json hot_topics.json
+          git add hotmusic.json hot_topics.json topics_ai.json
           if git diff --staged --quiet; then
             echo "no change today"
           else
@@ -54,3 +62,4 @@ jobs:
           sleep 10
           curl -fsS "https://purge.jsdelivr.net/gh/1164118805/beforeglow-daily@main/hotmusic.json" || true
           curl -fsS "https://purge.jsdelivr.net/gh/1164118805/beforeglow-daily@main/hot_topics.json" || true
+          curl -fsS "https://purge.jsdelivr.net/gh/1164118805/beforeglow-daily@main/topics_ai.json" || true

@@ -49,7 +49,8 @@ jobs:
         run: |
           git config user.name "beforeglow-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add hotmusic.json hot_topics.json topics_ai.json
+          git add hotmusic.json hot_topics.json
+          if [ -f topics_ai.json ]; then git add topics_ai.json; fi
           if git diff --staged --quiet; then
             echo "no change today"
           else

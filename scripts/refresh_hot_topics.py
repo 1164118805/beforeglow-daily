@@ -94,18 +94,22 @@ def titles(d):
 AI_URL = os.environ.get("LLM_BASE_URL", "https://models.github.ai/inference/chat/completions")
 AI_MODEL = os.environ.get("LLM_MODEL", "openai/gpt-4o-mini")
 AI_SYS = (
-    "你是抖音娱乐主播的直播编导。给每个热榜话题写直播时能直接念的口语。"
-    "不要解释概念，不要教程腔，不要套话。"
-    "k=类型，只能是「热梗」或「话题」。只有真正在玩梗、能接梗的标题才写「热梗」；"
-    "from=出处（这个梗/词怎么来的：哪部剧/哪个视频/哪个平台/大概什么时候；不确定写「暂无明确出处」，不要编）；mean=含义（原本什么意思、现在怎么用）；"
-    "tone=调性（轻松搞笑/自嘲/温柔/损友…）；scene=场景（直播里什么时候用，列2-3个）；ex=使用示范（2-3条对话，用「观众：… / 你：…」格式，换行分隔）；"
-    "detail=详细版（按五段写：梗是什么/出处来源/情绪调性/直播适用场景/避雷禁区；最后加2-3条实操对话；用换行分隔）；"
-    "from/mean/tone/scene/ex 不要带「出处：」「含义：」等前缀，前端会加标签。"
-    "新闻、健康、社会、产品发布、影视剧情讨论、知识问答、体育比分一律写「话题」。"
-    "o=开口（1句，能直接说）；r=接话（1句）；e=延伸（1句）；a=避坑（1句）。"
-    "od/rd/ed/ad=详细版，各2-3句，带具体背景、为什么、例子，必须有信息量。"
-    "政治/军事/灾难/官媒话题跳过。"
-    "严格输出 JSON 数组，每项 {t,k,o,r,e,a,od,rd,ed,ad}，不要 markdown、不要代码块。"
+    "你是抖音娱乐主播的直播编导。给每个热榜话题写直播时能直接念的口语。不要解释概念，不要教程腔，不要套话，不要「作为一个AI」。\n"
+    "k=类型，只能是「热梗」或「话题」。只有真正在玩梗、能接梗的标题才写「热梗」，新闻/健康/社会/产品发布/影视剧情讨论/知识问答/体育比分一律写「话题」。\n"
+    "stale=时效判断：这条到今天就该下架了就写 1（特效已失效、节日/季节已过、事件结束超过一个月、玩法已经没人用），否则写 0。拿不准就写 0，别把还在用的判成过时。\n"
+    "fresh=这个梗/说法大概什么时候开始流行的，格式 2025-09；不确定就留空。\n"
+    "mean=含义（原本什么意思、现在怎么用，20-40字，不要复述标题）\n"
+    "from=出处（这个梗/词怎么来的：哪部剧/哪个视频/哪个平台/大概什么时候；不确定写「暂无明确出处」，不要编）。\n"
+    "tone=调性（2-6字，如 轻松搞笑/自嘲/温柔/损友）。\n"
+    "scene=直播适用场景（2-3个，用「、」隔开）。\n"
+    "o=开口（1句，能直接说）；r=接话（1句）；e=延伸（1句）；a=避坑（1句）。\n"
+    "ex=使用示范（2-3条对话，先「观众：…」换行再「你：…」）。\n"
+    "detail=详细版，必须严格是这六行，行与行之间用 \\n 分隔，每行以标签开头、不要编号以外的前缀：\n"
+    "① 梗是什么：…\n② 出处来源：…\n③ 情绪调性：…\n④ 直播适用场景：…\n⑤ 避雷禁区：…\n实操话术：\n- 观众：… 你：…（再来2条）\n"
+    "od/rd/ed/ad=上面五段的口语扩充版，各2-3句，要具体、有信息量、有例子，别写空话。\n"
+    "from/mean/tone/scene 不要带「出处：」「含义：」等前缀，前端会加标签。\n"
+    "政治/军事/灾难/官媒话题直接跳过。\n"
+    "严格输出 JSON 数组，每项 {t,k,stale,fresh,o,r,e,a,od,rd,ed,ad,from,mean,tone,scene,ex,detail}，不要 markdown、不要代码块。"
 )
 
 
@@ -130,10 +134,11 @@ def _ai_chat(token, titles, sys_prompt=None):
 
 
 FILL_SYS = (
-    "你是中文梗/直播话术编辑。只补两个字段："
+    "你是中文梗/直播话术编辑。只补三个字段："
     "from=出处（这个梗/词怎么来的；不确定写「暂无明确出处」，不要编）；"
-    "ex=使用示范（2-3条对话，用「观众：… / 你：…」格式，换行分隔）。"
-    "严格输出 JSON 数组，每项 {t,from,ex}，不要 markdown、不要代码块。"
+    "ex=使用示范（2-3条对话，先「观众：…」换行再「你：…」）；"
+    "stale=时效（该下架写 1，否则 0）。"
+    "严格输出 JSON 数组，每项 {t,from,ex,stale}，不要 markdown、不要代码块。"
 )
 
 
@@ -163,6 +168,8 @@ def _ai_fill(token, items):
                 x["from"] = re.sub(r"^(出处|含义)[：:]\s*", "", f.strip())
             if isinstance(e, str) and e.strip():
                 x["ex"] = e.strip()
+            if str(item.get("stale")).strip() in ("1", "True", "true"):
+                x["stale"] = 1
             n += 1
         print("AI fill", i, "ok", n)
 
@@ -194,7 +201,9 @@ def ai_enrich(lst):
             k = item.get("k")
             if k in ("热梗", "话题"):
                 x["k"] = k
-            for key in ("from", "mean", "tone", "scene", "ex", "detail", "o", "r", "e", "a", "od", "rd", "ed", "ad"):
+            if str(item.get("stale")).strip() in ("1", "True", "true"):
+                x["stale"] = 1
+            for key in ("from", "mean", "tone", "scene", "ex", "detail", "o", "r", "e", "a", "od", "rd", "ed", "ad", "fresh"):
                 v = item.get(key)
                 if isinstance(v, str) and v.strip():
                     v = v.strip()
@@ -227,7 +236,8 @@ def main():
             prev_list = old.get("list", [])
             for x in prev_list:
                 prev[x.get("t", "")] = int(x.get("d", 1) or 1)
-                f = {k: x[k] for k in ("o", "r", "e", "a", "od", "rd", "ed", "ad") if x.get(k)}
+                f = {k: x[k] for k in ("o", "r", "e", "a", "od", "rd", "ed", "ad",
+                                       "from", "mean", "tone", "scene", "ex", "detail", "fresh") if x.get(k)}
                 if f:
                     prev_fields[x.get("t", "")] = f
         except Exception as e:
@@ -277,6 +287,15 @@ def main():
                 _ai_fill(token, missing)
     except Exception as e:
         print("AI enrich fail", repr(e))
+    _stale = [x for x in lst if x.get("stale")]
+    if _stale:
+        print("drop stale", len(_stale), [x.get("t") for x in _stale][:6])
+        lst = [x for x in lst if not x.get("stale")]
+    _ai_ok = sum(1 for x in lst if x.get("from") or x.get("mean"))
+    if _ai_ok == 0:
+        print("::warning title=AI 没产出::这次没有得到任何 from/mean 字段，检查 models 权限或 LLM_API_KEY")
+    else:
+        print("AI fields on %d/%d items" % (_ai_ok, len(lst)))
     out = {"v": 1, "at": datetime.date.today().isoformat(), "ts": int(time.time()), "note": "全网多平台热榜（每天 06:30 更新，AI 整理）", "sources": counts, "list": lst[:80]}
     json.dump(out, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     print("saved", len(out["list"]), "from", counts)

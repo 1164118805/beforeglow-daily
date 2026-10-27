@@ -91,15 +91,17 @@ def titles(d):
     return out
 
 
-AI_URL = "https://models.github.ai/inference/chat/completions"
+AI_URL = os.environ.get("LLM_BASE_URL", "https://models.github.ai/inference/chat/completions")
 AI_MODEL = os.environ.get("LLM_MODEL", "openai/gpt-4o-mini")
 AI_SYS = (
     "你是抖音娱乐主播的直播编导。给每个热榜话题写直播时能直接念的口语。"
     "不要解释概念，不要教程腔，不要套话。"
+    "k=类型，只能是「热梗」或「话题」。只有真正在玩梗、能接梗的标题才写「热梗」；"
+    "新闻、健康、社会、产品发布、影视剧情讨论、知识问答、体育比分一律写「话题」。"
     "o=开口（1句，能直接说）；r=接话（1句）；e=延伸（1句）；a=避坑（1句）。"
     "od/rd/ed/ad=详细版，各2-3句，带具体背景、为什么、例子，必须有信息量。"
     "政治/军事/灾难/官媒话题跳过。"
-    "严格输出 JSON 数组，每项 {t,o,r,e,a,od,rd,ed,ad}，不要 markdown、不要代码块。"
+    "严格输出 JSON 数组，每项 {t,k,o,r,e,a,od,rd,ed,ad}，不要 markdown、不要代码块。"
 )
 
 
@@ -124,7 +126,7 @@ def _ai_chat(token, titles):
 
 
 def ai_enrich(lst):
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("LLM_API_KEY")
+    token = os.environ.get("LLM_API_KEY") or os.environ.get("GITHUB_TOKEN")
     if not token:
         print("AI: no token, keep templates")
         return lst
@@ -147,13 +149,27 @@ def ai_enrich(lst):
             x = by.get(t)
             if not x:
                 continue
-            for k in ("o", "r", "e", "a", "od", "rd", "ed", "ad"):
-                v = item.get(k)
+            k = item.get("k")
+            if k in ("热梗", "话题"):
+                x["k"] = k
+            for key in ("o", "r", "e", "a", "od", "rd", "ed", "ad"):
+                v = item.get(key)
                 if isinstance(v, str) and v.strip():
-                    x[k] = v.strip()
+                    x[key] = v.strip()
             n += 1
         print("AI batch", i, "ok", n)
     return lst
+
+
+def fetch_retry(url):
+    last = None
+    for i in range(2):
+        try:
+            return fetch(url)
+        except Exception as e:
+            last = e
+            time.sleep(2)
+    raise last
 
 
 def main():
@@ -176,7 +192,7 @@ def main():
     counts = {}
     for pi, (p, url) in enumerate(SOURCES):
         try:
-            ts = titles(fetch(url))
+            ts = titles(fetch_retry(url))
         except Exception as e:
             print("FAIL", p, url, repr(e))
             continue
@@ -210,7 +226,7 @@ def main():
         lst = ai_enrich(lst)
     except Exception as e:
         print("AI enrich fail", repr(e))
-    out = {"v": 1, "at": datetime.date.today().isoformat(), "ts": int(time.time()), "note": "全网多平台热榜（每天 06:30 更新，AI 整理）", "list": lst[:80]}
+    out = {"v": 1, "at": datetime.date.today().isoformat(), "ts": int(time.time()), "note": "全网多平台热榜（每天 06:30 更新，AI 整理）", "sources": counts, "list": lst[:80]}
     json.dump(out, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     print("saved", len(out["list"]), "from", counts)
     return 0

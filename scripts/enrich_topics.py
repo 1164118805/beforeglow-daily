@@ -22,9 +22,11 @@ AI_MODEL = os.environ.get("LLM_MODEL") or "openai/gpt-4o-mini"
 # 候选端点/模型（第一个探测成功的会被采用）
 CANDIDATES = [
     ("https://models.github.ai/inference/chat/completions", "openai/gpt-4o-mini"),
-    ("https://models.github.ai/inference/chat/completions", "openai/gpt-4.1-mini"),
-    ("https://models.github.ai/inference/chat/completions", "gpt-4o-mini"),
-    ("https://models.inference.ai.azure.com/chat/completions", "gpt-4o-mini"),
+    ("https://models.github.ai/v1/chat/completions", "openai/gpt-4o-mini"),
+    ("https://models.github.ai/inference/v1/chat/completions", "openai/gpt-4o-mini"),
+    ("https://models.github.ai/chat/completions", "openai/gpt-4o-mini"),
+    ("https://api.github.ai/models/inference/chat/completions", "openai/gpt-4o-mini"),
+    ("https://models.github.ai/inference", "openai/gpt-4o-mini"),
 ]
 if os.environ.get("LLM_BASE_URL"):
     CANDIDATES.insert(0, (os.environ["LLM_BASE_URL"], AI_MODEL))
@@ -110,10 +112,11 @@ def ai_batch(chunk, old_map, timeout=60):
     )
     with urllib.request.urlopen(req, timeout=timeout) as r:
         raw = r.read().decode("utf-8", "ignore")
+        _ct = r.headers.get("content-type", "")
     try:
         d = json.loads(raw)
     except Exception:
-        print("RAW[%s] %s" % (r.status, raw[:300].replace(chr(10), " ")))
+        print("RAW[%s][%s] %s" % (r.status, _ct, raw[:200].replace(chr(10), " ")))
         raise
     content = d["choices"][0]["message"]["content"]
     content = re.sub(r"^```(?:json)?|```$", "", content.strip(), flags=re.M).strip()

@@ -1,4 +1,4 @@
-name: Refresh Douyin hot music
+name: Refresh hot music and topics
 
 on:
   schedule:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: refresh-hotmusic
+  group: refresh-hot-data
   cancel-in-progress: false
 
 jobs:
@@ -28,15 +28,18 @@ jobs:
       - name: Build hotmusic.json
         run: python3 scripts/refresh_hotmusic.py
 
+      - name: Build hot_topics.json
+        run: python3 scripts/refresh_hot_topics.py
+
       - name: Commit if changed
         run: |
           git config user.name "beforeglow-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add hotmusic.json
+          git add hotmusic.json hot_topics.json
           if git diff --staged --quiet; then
             echo "no change today"
           else
-            git commit -m "chore: refresh douyin hot music $(date -u +%F)"
+            git commit -m "chore: refresh hot data $(date -u +%F)"
             git push
           fi
 
@@ -44,3 +47,4 @@ jobs:
         run: |
           sleep 10
           curl -fsS "https://purge.jsdelivr.net/gh/1164118805/beforeglow-daily@main/hotmusic.json" || true
+          curl -fsS "https://purge.jsdelivr.net/gh/1164118805/beforeglow-daily@main/hot_topics.json" || true

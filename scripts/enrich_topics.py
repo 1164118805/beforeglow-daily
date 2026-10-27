@@ -8,6 +8,7 @@
   python3 scripts/enrich_topics.py            # 增量（默认 30 天内不重复跑）
   python3 scripts/enrich_topics.py --force    # 强制全量重跑
 """
+# KICK: 触发一次云端补全
 import json
 import os
 import re

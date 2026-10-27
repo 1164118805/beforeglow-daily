@@ -109,11 +109,11 @@ AI_SYS = (
 )
 
 
-def _ai_chat(token, titles):
+def _ai_chat(token, titles, sys_prompt=None):
     body = {
         "model": AI_MODEL,
         "messages": [
-            {"role": "system", "content": AI_SYS},
+            {"role": "system", "content": sys_prompt or AI_SYS},
             {"role": "user", "content": "话题：" + json.dumps(titles, ensure_ascii=False)},
         ],
         "temperature": 0.8,
@@ -127,6 +127,44 @@ def _ai_chat(token, titles):
     with urllib.request.urlopen(req, timeout=120) as r:
         d = json.loads(r.read().decode("utf-8"))
     return d["choices"][0]["message"]["content"]
+
+
+FILL_SYS = (
+    "你是中文梗/直播话术编辑。只补两个字段："
+    "from=出处（这个梗/词怎么来的；不确定写「暂无明确出处」，不要编）；"
+    "ex=使用示范（2-3条对话，用「观众：… / 你：…」格式，换行分隔）。"
+    "严格输出 JSON 数组，每项 {t,from,ex}，不要 markdown、不要代码块。"
+)
+
+
+def _ai_fill(token, items):
+    by = {x["t"]: x for x in items}
+    for i in range(0, len(items), 10):
+        chunk = items[i:i + 10]
+        titles = [x["t"] for x in chunk]
+        try:
+            content = _ai_chat(token, titles, FILL_SYS)
+            content = re.sub(r"^```(?:json)?|```$", "", content.strip(), flags=re.M).strip()
+            arr = json.loads(content)
+            if isinstance(arr, dict):
+                arr = arr.get("items") or arr.get("list") or []
+        except Exception as e:
+            print("AI fill fail", i, repr(e))
+            continue
+        n = 0
+        for item in arr:
+            t = item.get("t")
+            x = by.get(t)
+            if not x:
+                continue
+            f = item.get("from")
+            e = item.get("ex")
+            if isinstance(f, str) and f.strip():
+                x["from"] = re.sub(r"^(出处|含义)[：:]\s*", "", f.strip())
+            if isinstance(e, str) and e.strip():
+                x["ex"] = e.strip()
+            n += 1
+        print("AI fill", i, "ok", n)
 
 
 def ai_enrich(lst):
@@ -231,6 +269,12 @@ def main():
     lst.sort(key=lambda x: -x["h"])
     try:
         lst = ai_enrich(lst)
+        token = os.environ.get("LLM_API_KEY") or os.environ.get("GITHUB_TOKEN")
+        if token:
+            missing = [x for x in lst if not x.get("from") or not x.get("ex")]
+            if missing:
+                print("AI second pass for", len(missing), "items")
+                _ai_fill(token, missing)
     except Exception as e:
         print("AI enrich fail", repr(e))
     out = {"v": 1, "at": datetime.date.today().isoformat(), "ts": int(time.time()), "note": "全网多平台热榜（每天 06:30 更新，AI 整理）", "sources": counts, "list": lst[:80]}

@@ -17,9 +17,9 @@ import urllib.request
 
 SITE = os.environ.get("SITE_BASE", "https://beforeglow-2412.surge.sh")
 OUT = "topics_ai.json"
-AI_URL = os.environ.get("LLM_BASE_URL", "https://models.github.ai/inference/chat/completions")
-AI_MODEL = os.environ.get("LLM_MODEL", "openai/gpt-4o-mini")
-TOKEN = os.environ.get("LLM_API_KEY") or os.environ.get("GITHUB_TOKEN")
+AI_URL = os.environ.get("LLM_BASE_URL") or "https://models.github.ai/inference/chat/completions"
+AI_MODEL = os.environ.get("LLM_MODEL") or "openai/gpt-4o-mini"
+TOKEN = (os.environ.get("LLM_API_KEY") or "").strip() or os.environ.get("GITHUB_TOKEN")
 BATCH = 10
 DEADLINE = 9 * 60  # 全流程最多跑 9 分钟，超时就写已有的
 MAX_AGE = 30 * 24 * 3600

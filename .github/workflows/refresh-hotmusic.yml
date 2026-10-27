@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  models: read
 
 concurrency:
   group: refresh-hot-data
@@ -29,6 +30,8 @@ jobs:
         run: python3 scripts/refresh_hotmusic.py
 
       - name: Build hot_topics.json
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/refresh_hot_topics.py
 
       - name: Commit if changed

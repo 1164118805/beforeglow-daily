@@ -7,7 +7,7 @@
 - 过滤政治/军事/灾难/官媒，只留娱乐生活类
 - 连续在榜天数写入 d（用于「持续热」）
 """
-import json, os, re, sys, datetime, html, urllib.request
+import json, os, re, sys, time, datetime, html, urllib.request
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
 
@@ -78,6 +78,71 @@ def titles(d):
     return out
 
 
+AI_URL = "https://models.github.ai/inference/chat/completions"
+AI_MODEL = os.environ.get("LLM_MODEL", "openai/gpt-4o-mini")
+AI_SYS = (
+    "你是抖音娱乐主播的直播编导。给每个热榜话题写直播时能直接念的口语。"
+    "不要解释概念，不要教程腔，不要套话。"
+    "o=开口（1句，能直接说）；r=接话（1句）；e=延伸（1句）；a=避坑（1句）。"
+    "od/rd/ed/ad=详细版，各2-3句，带具体背景、为什么、例子，必须有信息量。"
+    "政治/军事/灾难/官媒话题跳过。"
+    "严格输出 JSON 数组，每项 {t,o,r,e,a,od,rd,ed,ad}，不要 markdown、不要代码块。"
+)
+
+
+def _ai_chat(token, titles):
+    body = {
+        "model": AI_MODEL,
+        "messages": [
+            {"role": "system", "content": AI_SYS},
+            {"role": "user", "content": "话题：" + json.dumps(titles, ensure_ascii=False)},
+        ],
+        "temperature": 0.8,
+        "max_tokens": 4000,
+    }
+    req = urllib.request.Request(
+        AI_URL,
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=120) as r:
+        d = json.loads(r.read().decode("utf-8"))
+    return d["choices"][0]["message"]["content"]
+
+
+def ai_enrich(lst):
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("LLM_API_KEY")
+    if not token:
+        print("AI: no token, keep templates")
+        return lst
+    by = {x["t"]: x for x in lst}
+    for i in range(0, len(lst), 10):
+        chunk = lst[i:i + 10]
+        titles = [x["t"] for x in chunk]
+        try:
+            content = _ai_chat(token, titles)
+            content = re.sub(r"^```(?:json)?|```$", "", content.strip(), flags=re.M).strip()
+            arr = json.loads(content)
+            if isinstance(arr, dict):
+                arr = arr.get("items") or arr.get("list") or []
+        except Exception as e:
+            print("AI batch fail", i, repr(e))
+            continue
+        n = 0
+        for item in arr:
+            t = item.get("t")
+            x = by.get(t)
+            if not x:
+                continue
+            for k in ("o", "r", "e", "a", "od", "rd", "ed", "ad"):
+                v = item.get(k)
+                if isinstance(v, str) and v.strip():
+                    x[k] = v.strip()
+            n += 1
+        print("AI batch", i, "ok", n)
+    return lst
+
+
 def main():
     prev = {}
     prev_list = []
@@ -121,7 +186,11 @@ def main():
 
     lst = list(best.values())
     lst.sort(key=lambda x: -x["h"])
-    out = {"v": 1, "at": datetime.date.today().isoformat(), "note": "全网多平台热榜（每天 06:30 更新）", "list": lst[:60]}
+    try:
+        lst = ai_enrich(lst)
+    except Exception as e:
+        print("AI enrich fail", repr(e))
+    out = {"v": 1, "at": datetime.date.today().isoformat(), "ts": int(time.time()), "note": "全网多平台热榜（每天 06:30 更新，AI 整理）", "list": lst[:60]}
     json.dump(out, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     print("saved", len(out["list"]), "from", counts)
     return 0

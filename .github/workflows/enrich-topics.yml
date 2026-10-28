@@ -43,7 +43,7 @@ jobs:
           if [ "$FORCE" = "true" ]; then
             python3 scripts/enrich_topics.py --force
           else
-            python3 scripts/enrich_topics.py
+            python3 scripts/enrich_topics.py --force
           fi
 
       - name: Commit if changed

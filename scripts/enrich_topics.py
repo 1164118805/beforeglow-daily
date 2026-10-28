@@ -49,6 +49,13 @@ SYS = (
     "每条先「观众：…」换行再「你：…」，句子要短，像真的在说话）\n"
     "stale=时效判断：这条今天已经没人用了（特效失效、节日已过、事件结束超一个月）写 1，否则写 0；拿不准写 0\n"
     "fresh=大概什么时候开始流行，格式 2025-09，不确定留空\n"
+    "如果某条是热榜新闻（标题像事件/新闻，不是梗），不要硬套梗的写法：\n"
+    "mean 写这条讲了什么（一句大白话，让人看懂）；\n"
+    "from 写来源，比如「今天 微博热搜 第 7 位」「抖音热榜」；\n"
+    "tone 写氛围词，比如「吃瓜」「祝福向」「争议中」；\n"
+    "scene 写什么时候能聊（开播暖场、中场闲聊）；\n"
+    "avoid 写风险：别站队、别评价当事人私事、别传播未经证实的信息；\n"
+    "ex 仍然给 3 条，重点是主播怎么开口接这条新闻（可以不作评价，只说看到什么）。\n"
     "严格输出 JSON 数组，每项 {t,mean,from,tone,scene,avoid,ex,stale,fresh}，t 必须和输入标题一字不差。"
     "不要 markdown、不要代码块、不要多余解释。"
 )
@@ -123,6 +130,20 @@ def http_json(url, timeout=40):
         return json.loads(r.read().decode("utf-8"))
 
 
+
+def is_good(d):
+    """已有内容是否达到新版标准（够具体 + 有避雷）。"""
+    if not isinstance(d, dict):
+        return False
+    mean = str(d.get("mean") or "").strip()
+    avoid = str(d.get("avoid") or "").strip()
+    if len(mean) < 25:
+        return False
+    if not avoid:
+        return False
+    return True
+
+
 def load_pool():
     """从站点取本地话题与词汇，拼成待处理清单。"""
     items, seen = [], set()
@@ -147,6 +168,24 @@ def load_pool():
                 "o": str(row[2] or ""),
                 "r": str(row[3] or ""),
             })
+    # 热榜（结构不同：{list:[{p,t,h}]}）
+    try:
+        d = http_json(SITE + "/hot_topics.json?e=" + str(int(time.time())))
+        rows = d.get("list") or []
+        n = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            t = str(row.get("t") or "").strip()
+            if not t or t in seen or len(t) > 42:
+                continue
+            seen.add(t)
+            items.append({"t": t, "k": "热榜", "o": str(row.get("p") or ""), "r": ""})
+            n += 1
+        print("fetch hot_topics", n)
+    except Exception as e:
+        print("fetch fail hot_topics", repr(e))
+
     return items
 
 
@@ -278,8 +317,11 @@ def main():
         print("nothing to do")
         return
 
-    if not force and old_map:
-        before = len(items)
+    before = len(items)
+    if force:
+        items = [x for x in items if not is_good(old_map.get(x["t"]))]
+        print("upgrade needed:", len(items), "of", before)
+    elif old_map:
         items = [x for x in items if x["t"] not in old_map]
         print("skip done:", before - len(items), "remain:", len(items))
 

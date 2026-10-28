@@ -46,11 +46,21 @@ jobs:
           LLM_MODEL: ${{ vars.LLM_MODEL }}
         run: python3 scripts/enrich_topics.py
 
+      - name: Daily AI (信 + 话术补包)
+        continue-on-error: true
+        env:/n          GITHUB_TOKEN: ${{ github.token }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+        run: python3 scripts/refresh_daily_ai.py
+
       - name: Commit if changed
         run: |
           git config user.name "beforeglow-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add hotmusic.json hot_topics.json
+          if [ -f letters_ai.json ]; then git add letters_ai.json; fi
+          if [ -f says_ai.json ]; then git add says_ai.json; fi
           if [ -f topics_ai.json ]; then git add topics_ai.json; fi
           if git diff --staged --quiet; then
             echo "no change today"

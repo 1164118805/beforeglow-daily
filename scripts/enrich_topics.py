@@ -25,6 +25,9 @@ CANDIDATES = []
 if _BASE:
     CANDIDATES.append((_BASE, AI_MODEL))
 CANDIDATES.append(("https://models.github.ai/inference/chat/completions", AI_MODEL))
+# 无 key 的免费兜底（OpenAI 兼容）
+CANDIDATES.append(("https://text.pollinations.ai/openai", "openai"))
+CANDIDATES.append(("https://text.pollinations.ai/openai", "mistral"))
 TOKEN = (os.environ.get("LLM_API_KEY") or "").strip() or os.environ.get("GITHUB_TOKEN")
 BATCH = 10
 DEADLINE = 9 * 60  # 全流程最多跑 9 分钟，超时就写已有的

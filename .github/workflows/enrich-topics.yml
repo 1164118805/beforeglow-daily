@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   group: enrich-topics
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   enrich:
@@ -32,6 +32,7 @@ jobs:
           python-version: '3.x'
 
       - name: Enrich topics
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}

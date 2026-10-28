@@ -3,7 +3,7 @@ name: Refresh hot music and topics
 on:
   schedule:
     # 06:30 Asia/Shanghai (UTC+8) -> 22:30 UTC previous day
-    - cron: '30 22 * * *'
+    - cron: '30 9 * * *'   # 17:30 北京
   workflow_dispatch:
 
 permissions:
@@ -61,6 +61,7 @@ jobs:
           git add hotmusic.json hot_topics.json
           if [ -f letters_ai.json ]; then git add letters_ai.json; fi
           if [ -f says_ai.json ]; then git add says_ai.json; fi
+          if [ -f daily_ai.json ]; then git add daily_ai.json; fi
           if [ -f topics_ai.json ]; then git add topics_ai.json; fi
           if git diff --staged --quiet; then
             echo "no change today"

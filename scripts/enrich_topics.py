@@ -29,8 +29,8 @@ CANDIDATES.append(("https://models.github.ai/inference/chat/completions", AI_MOD
 # 无 key 的免费兜底（OpenAI 兼容）
 CANDIDATES.append(("ddg", "gpt-4o-mini"))
 TOKEN = (os.environ.get("LLM_API_KEY") or "").strip() or os.environ.get("GITHUB_TOKEN")
-BATCH = 10
-DEADLINE = 9 * 60  # 全流程最多跑 9 分钟，超时就写已有的
+BATCH = 5
+DEADLINE = 16 * 60  # 全流程最多跑 9 分钟，超时就写已有的
 MAX_AGE = 30 * 24 * 3600
 
 SYS = (
@@ -164,7 +164,7 @@ def ai_batch(chunk, old_map, timeout=60, kind="openai"):
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
         ],
         "temperature": 0.6,
-        "max_tokens": 3500,
+        "max_tokens": 2200,
     }
     if kind == "ddg":
         content = _with_timeout(lambda: _ddg_chat(SYS, json.dumps(payload, ensure_ascii=False), timeout), timeout + 5)
@@ -284,7 +284,7 @@ def main():
             break
         for attempt in range(2):
             try:
-                got = ai_batch(chunk, old_map, timeout=55, kind=_KIND)
+                got = ai_batch(chunk, old_map, timeout=150, kind=_KIND)
                 for t, rec in got.items():
                     old_map[t] = rec
                 done += len(got)
@@ -308,4 +308,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-# KICK3

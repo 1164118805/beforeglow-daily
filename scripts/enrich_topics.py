@@ -30,7 +30,7 @@ CANDIDATES.append(("https://models.github.ai/inference/chat/completions", AI_MOD
 CANDIDATES.append(("ddg", "gpt-4o-mini"))
 TOKEN = (os.environ.get("LLM_API_KEY") or "").strip() or os.environ.get("GITHUB_TOKEN")
 BATCH = 5
-DEADLINE = 16 * 60  # 全流程最多跑 9 分钟，超时就写已有的
+DEADLINE = 22 * 60  # 全流程最多跑 9 分钟，超时就写已有的
 MAX_AGE = 30 * 24 * 3600
 
 SYS = (
@@ -273,6 +273,11 @@ def main():
     if not items:
         print("nothing to do")
         return
+
+    if not force and old_map:
+        before = len(items)
+        items = [x for x in items if x["t"] not in old_map]
+        print("skip done:", before - len(items), "remain:", len(items))
 
     done, fail = 0, 0
     t0 = time.time()

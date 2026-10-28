@@ -27,8 +27,6 @@ if _BASE:
     CANDIDATES.append((_BASE, AI_MODEL))
 CANDIDATES.append(("https://models.github.ai/inference/chat/completions", AI_MODEL))
 # 无 key 的免费兜底（OpenAI 兼容）
-CANDIDATES.append(("https://text.pollinations.ai/openai", "openai"))
-CANDIDATES.append(("https://text.pollinations.ai/openai", "mistral"))
 CANDIDATES.append(("ddg", "gpt-4o-mini"))
 TOKEN = (os.environ.get("LLM_API_KEY") or "").strip() or os.environ.get("GITHUB_TOKEN")
 BATCH = 10
@@ -170,11 +168,7 @@ def ai_batch(chunk, old_map, timeout=60, kind="openai"):
     }
     if kind == "ddg":
         content = _with_timeout(lambda: _ddg_chat(SYS, json.dumps(payload, ensure_ascii=False), timeout), timeout + 5)
-        content = re.sub(r"^```(?:json)?|```$", "", content.strip(), flags=re.M).strip()
-        arr = json.loads(content)
-        if isinstance(arr, dict):
-            arr = arr.get("items") or arr.get("list") or []
-        return _collect(arr)
+        return _collect(_salvage(content))
     req = urllib.request.Request(
         AI_URL,
         data=json.dumps(body).encode("utf-8"),
@@ -190,11 +184,33 @@ def ai_batch(chunk, old_map, timeout=60, kind="openai"):
         raise
     content = d["choices"][0]["message"]["content"]
     content = re.sub(r"^```(?:json)?|```$", "", content.strip(), flags=re.M).strip()
-    arr = json.loads(content)
-    if isinstance(arr, dict):
-        arr = arr.get("items") or arr.get("list") or []
-    return _collect(arr)
+    return _collect(_salvage(content))
 
+
+
+def _salvage(text):
+    """模型偶尔会带前言、截断或加代码块，尽量把对象捞出来。"""
+    t = re.sub(r"^```(?:json)?|```$", "", (text or "").strip(), flags=re.M).strip()
+    try:
+        v = json.loads(t)
+        if isinstance(v, dict):
+            return v.get("items") or v.get("list") or [v]
+        return v if isinstance(v, list) else []
+    except Exception:
+        pass
+    m = re.search(r"\[.*\]", t, re.S)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:
+            pass
+    out = []
+    for obj in re.findall(r"\{[^{}]*\}", t):
+        try:
+            out.append(json.loads(obj))
+        except Exception:
+            continue
+    return out
 
 def _collect(arr):
     out = {}
@@ -260,8 +276,9 @@ def main():
 
     done, fail = 0, 0
     t0 = time.time()
-    for i in range(0, len(items), BATCH):
-        chunk = items[i:i + BATCH]
+    _bs = 4 if _KIND == "ddg" else BATCH
+    for i in range(0, len(items), _bs):
+        chunk = items[i:i + _bs]
         if time.time() - t0 > DEADLINE:
             print("deadline reached, keep what we have")
             break
@@ -291,4 +308,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-# KICK2

@@ -19,6 +19,7 @@ SITE = os.environ.get("SITE_BASE", "https://beforeglow-2412.surge.sh")
 OUT = "topics_ai.json"
 AI_URL = os.environ.get("LLM_BASE_URL") or "https://models.github.ai/inference/chat/completions"
 AI_MODEL = os.environ.get("LLM_MODEL") or "openai/gpt-4o-mini"
+_KIND = "openai"
 # 候选端点/模型（第一个探测成功的会被采用）
 _BASE = (os.environ.get("LLM_BASE_URL") or "").strip()
 CANDIDATES = []
@@ -28,6 +29,7 @@ CANDIDATES.append(("https://models.github.ai/inference/chat/completions", AI_MOD
 # 无 key 的免费兜底（OpenAI 兼容）
 CANDIDATES.append(("https://text.pollinations.ai/openai", "openai"))
 CANDIDATES.append(("https://text.pollinations.ai/openai", "mistral"))
+CANDIDATES.append(("ddg", "gpt-4o-mini"))
 TOKEN = (os.environ.get("LLM_API_KEY") or "").strip() or os.environ.get("GITHUB_TOKEN")
 BATCH = 10
 DEADLINE = 9 * 60  # 全流程最多跑 9 分钟，超时就写已有的
@@ -49,6 +51,69 @@ SYS = (
     "不要 markdown、不要代码块、不要多余解释。"
 )
 
+
+
+import signal
+
+
+class _HardTimeout(Exception):
+    pass
+
+
+def _alarm(signum, frame):
+    raise _HardTimeout("request timed out")
+
+
+def _with_timeout(fn, secs):
+    """Linux 上用 SIGALRM 硬砍，避免请求挂住不出声。"""
+    try:
+        old = signal.signal(signal.SIGALRM, _alarm)
+        signal.setitimer(signal.ITIMER_REAL, secs)
+        try:
+            return fn()
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, old)
+    except AttributeError:
+        return fn()
+
+
+def _ddg_chat(sys_prompt, user_msg, timeout=60):
+    """DuckDuckGo AI Chat（免 key）：先拿 vqd，再走 SSE 流。"""
+    ua = {"User-Agent": "Mozilla/5.0", "x-vqd-accept": "1"}
+    req = urllib.request.Request("https://duckduckgo.com/duckchat/v1/status", headers=ua)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        vqd = r.headers.get("x-vqd-4") or ""
+    if not vqd:
+        raise RuntimeError("no vqd")
+    body = {
+        "model": "gpt-4o-mini",
+        "messages": [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": user_msg},
+        ],
+    }
+    req = urllib.request.Request(
+        "https://duckduckgo.com/duckchat/v1/chat",
+        data=json.dumps(body).encode(),
+        headers={"User-Agent": "Mozilla/5.0", "Content-Type": "application/json", "x-vqd-4": vqd},
+    )
+    out = []
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        for raw in r:
+            line = raw.decode("utf-8", "ignore").strip()
+            if not line.startswith("data:"):
+                continue
+            payload = line[5:].strip()
+            if payload == "[DONE]":
+                break
+            try:
+                d = json.loads(payload)
+            except Exception:
+                continue
+            if d.get("message"):
+                out.append(d["message"])
+    return "".join(out)
 
 def http_json(url, timeout=40):
     req = urllib.request.Request(url, headers={"User-Agent": "beforeglow-bot"})
@@ -83,7 +148,7 @@ def load_pool():
     return items
 
 
-def ai_batch(chunk, old_map, timeout=60):
+def ai_batch(chunk, old_map, timeout=60, kind="openai"):
     """chunk: [{t,k,o,r}] -> {t:{mean,from,tone,scene,ex}}"""
     payload = []
     for x in chunk:
@@ -103,6 +168,13 @@ def ai_batch(chunk, old_map, timeout=60):
         "temperature": 0.6,
         "max_tokens": 3500,
     }
+    if kind == "ddg":
+        content = _with_timeout(lambda: _ddg_chat(SYS, json.dumps(payload, ensure_ascii=False), timeout), timeout + 5)
+        content = re.sub(r"^```(?:json)?|```$", "", content.strip(), flags=re.M).strip()
+        arr = json.loads(content)
+        if isinstance(arr, dict):
+            arr = arr.get("items") or arr.get("list") or []
+        return _collect(arr)
     req = urllib.request.Request(
         AI_URL,
         data=json.dumps(body).encode("utf-8"),
@@ -121,6 +193,10 @@ def ai_batch(chunk, old_map, timeout=60):
     arr = json.loads(content)
     if isinstance(arr, dict):
         arr = arr.get("items") or arr.get("list") or []
+    return _collect(arr)
+
+
+def _collect(arr):
     out = {}
     for it in arr:
         t = str(it.get("t") or "").strip()
@@ -163,9 +239,11 @@ def main():
     for url, model in CANDIDATES:
         try:
             AI_URL, AI_MODEL = url, model
-            got = ai_batch([{"t": "测试", "k": "词汇", "o": "你好", "r": "你好呀"}], {}, timeout=40)
+            _kind = "ddg" if url == "ddg" else "openai"
+            got = ai_batch([{"t": "测试", "k": "词汇", "o": "你好", "r": "你好呀"}], {}, timeout=45, kind=_kind)
             if got:
                 picked = (url, model)
+                globals()["_KIND"] = _kind
                 print("AI ok:", url, model)
                 break
         except Exception as e:
@@ -189,7 +267,7 @@ def main():
             break
         for attempt in range(2):
             try:
-                got = ai_batch(chunk, old_map)
+                got = ai_batch(chunk, old_map, timeout=55, kind=_KIND)
                 for t, rec in got.items():
                     old_map[t] = rec
                 done += len(got)

@@ -1,0 +1,48 @@
+name: Weekly self check
+
+on:
+  schedule:
+    # 每周一 07:00 Asia/Shanghai（= 周日 23:00 UTC）
+    - cron: '0 23 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: selfcheck
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Run self check
+        env:
+          SITE_BASE: https://beforeglow-2412.surge.sh
+        run: python3 scripts/selfcheck.py
+
+      - name: Commit if changed
+        run: |
+          git config user.name "beforeglow-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add insights.json
+          if git diff --staged --quiet; then
+            echo "no change"
+          else
+            git commit -m "chore: weekly self check $(date -u +%F)"
+            git push
+          fi
+
+      - name: Purge jsDelivr cache
+        run: |
+          sleep 8
+          curl -fsS "https://purge.jsdelivr.net/gh/1164118805/beforeglow-daily@main/insights.json" || true

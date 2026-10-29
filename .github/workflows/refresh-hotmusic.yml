@@ -2,7 +2,7 @@ name: Refresh hot music and topics
 
 on:
   schedule:
-    # 06:30 Asia/Shanghai (UTC+8) -> 22:30 UTC previous day
+    # 17:30 Asia/Shanghai (UTC+8) = 09:30 UTC
     - cron: '30 9 * * *'   # 17:30 北京
   workflow_dispatch:
 

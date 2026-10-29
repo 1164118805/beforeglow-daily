@@ -1,6 +1,9 @@
 name: Enrich topics with AI
 
 on:
+  schedule:
+    # 每天 17:45 北京（UTC 09:45）—— 排在热歌 17:30 之后
+    - cron: '45 9 * * *'
   workflow_dispatch:
     inputs:
       force:

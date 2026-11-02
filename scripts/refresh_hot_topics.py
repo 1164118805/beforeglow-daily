@@ -113,6 +113,25 @@ def fetch(url):
 GENG_NOISE = re.compile(r"【[^】]{1,10}】|\[[^\]]{1,10}\]|（[^）]{0,6}(?:梗|百科|学堂|音乐志)[^）]{0,6}）|\([^)]{0,6}(?:梗|百科)[^)]{0,6}\)")
 
 
+SENT_PUNC = "，。！？～、：；…,.!?~|｜《》【】「」"
+
+
+def looks_like_geng(t):
+    """B站一堆视频标题会被当成梗：「用最密的热梗，包了一个很多人没接住的黑色寓言」
+    「Day1: 一个 AI 给自己装了梗百科，还去训了嗓子」。判断标准很土但有效：
+    梗是**词**，不是句子——长度短、没有标点、不是泛称。"""
+    v = str(t or "").strip()
+    if not v:
+        return False
+    if len(v) > 14:
+        return False
+    if any(c in v for c in SENT_PUNC):
+        return False
+    if re.search(r"梗百科|热梗|什么梗|梗学堂|接不住|不放过", v):
+        return False
+    return True
+
+
 def clean_geng_title(t):
     """B站二创标题长这样：「【梗百科】"外公的脑袋不够用"是什么梗，归寂你怎么不多长40个脑袋？」
     要的是里面那个梗本身。顺序很关键：**先按「是什么梗」切，再退回引号**——
@@ -177,6 +196,8 @@ def titles(d):
         t = re.sub(r"^#+|#+$", "", str(t)).replace("\n", " ").strip()
         if "梗" in t:
             t = clean_geng_title(t)
+            if not looks_like_geng(t):
+                continue          # 「用最密的热梗，包了一个…」这种整句，不是梗
         if t and len(t) <= 40 and len(re.findall(r"[\u4e00-\u9fa5]", t)) >= 3 and not BAD.search(t):
             out.append(t)
     return out
@@ -604,6 +625,14 @@ def main():
         print("::warning title=AI 没产出::这次没有得到任何 from/mean 字段，检查 models 权限或 LLM_API_KEY")
     else:
         print("AI fields on %d/%d items" % (_ai_ok, len(lst)))
+    # 没跑成 AI（没 token / 全失败）时，只发布「有释义的」和「手工种子」。
+    # 热榜生标题直接端给用户就是一堆句子（"用最密的热梗，包了一个…"），宁可少，不要脏。
+    _ai_ok_now = sum(1 for x in lst if x.get("mean"))
+    if _ai_ok_now == 0:
+        _before = len(lst)
+        lst = [x for x in lst if x.get("src") == "seed" or x.get("mean")]
+        print("::warning title=这次没有 AI::只发布 %d 条（原有 %d 条未补释义，已挡在门外）" % (len(lst), _before))
+
     _bad = [x for x in lst if x.get("invalid")]
     if _bad:
         print("drop invalid", len(_bad), [x.get("t") for x in _bad][:5])

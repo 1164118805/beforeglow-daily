@@ -167,8 +167,13 @@ def _ai_chat(token, titles, sys_prompt=None):
             {"role": "user", "content": "话题：" + json.dumps(titles, ensure_ascii=False)},
         ],
         "temperature": 0.8,
-        "max_tokens": 4000,
+        # 每条要写 17 个字段（含 detail 六行），4000 会被截断成半截 JSON
+        "max_tokens": 8000,
     }
+    # 豆包 seed 系列默认带思考过程：先把 reasoning 跑满再出正文，长结构化输出必超时。
+    # 抽字段这种活不需要思考，关掉能快 3 倍（实测 150s 超时 → 55s 出结果）。
+    if "volces.com" in AI_URL or "ark.cn" in AI_URL:
+        body["thinking"] = {"type": "disabled"}
     req = urllib.request.Request(
         AI_URL,
         data=json.dumps(body).encode("utf-8"),
@@ -226,8 +231,8 @@ def ai_enrich(lst):
         print("AI: no token, keep templates")
         return lst
     by = {x["t"]: x for x in lst}
-    for i in range(0, len(lst), 10):
-        chunk = lst[i:i + 10]
+    for i in range(0, len(lst), 4):
+        chunk = lst[i:i + 4]
         titles = [x["t"] for x in chunk]
         try:
             content = _ai_chat(token, titles)

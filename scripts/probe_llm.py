@@ -105,8 +105,19 @@ def main():
     ap.add_argument("--base", default=os.environ.get("LLM_BASE_URL") or DEFAULT_BASE)
     ap.add_argument("--model", default=os.environ.get("LLM_MODEL") or DEFAULT_MODEL)
     ap.add_argument("--key", default=os.environ.get("LLM_API_KEY") or "")
+    ap.add_argument("--key-file", default="", help="从文件读 key（取第一行非 # 非空的行）")
     ap.add_argument("--prompt", default="只回答两个字：通了")
     a = ap.parse_args()
+
+    if a.key_file and not a.key:
+        try:
+            for line in open(a.key_file, encoding="utf-8"):
+                t = line.strip()
+                if t and not t.startswith("#"):
+                    a.key = t
+                    break
+        except Exception as e:
+            print("读 key 文件失败：%r" % (e,))
 
     host = a.base.split("://", 1)[-1].split("/")[0]
     print("目标：%s\n模型：%s\n" % (a.base, a.model))

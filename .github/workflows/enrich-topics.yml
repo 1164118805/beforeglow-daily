@@ -12,7 +12,8 @@ on:
         default: "true"
   push:
     paths:
-      - 'scripts/enrich_topics.py'
+      - 'scripts/refresh_hot_topics.py'
+      - 'scripts/geng_seed.json'
 
 permissions:
   contents: write

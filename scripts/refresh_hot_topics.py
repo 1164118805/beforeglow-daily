@@ -140,22 +140,37 @@ if not AI_URL.endswith("/chat/completions"):
     AI_URL += "/chat/completions"
 AI_MODEL = os.environ.get("LLM_MODEL") or "openai/gpt-4o-mini"
 AI_SYS = (
-    "你是抖音娱乐主播的直播编导。给每个热榜话题写直播时能直接念的口语。不要解释概念，不要教程腔，不要套话，不要「作为一个AI」。\n"
-    "k=类型，只能是「热梗」或「话题」。只有真正在玩梗、能接梗的标题才写「热梗」，新闻/健康/社会/产品发布/影视剧情讨论/知识问答/体育比分一律写「话题」。\n"
-    "stale=时效判断：这条到今天就该下架了就写 1（特效已失效、节日/季节已过、事件结束超过一个月、玩法已经没人用），否则写 0。拿不准就写 0，别把还在用的判成过时。\n"
-    "fresh=这个梗/说法大概什么时候开始流行的，格式 2025-09；不确定就留空。\n"
-    "mean=含义（原本什么意思、现在怎么用，20-40字，不要复述标题）\n"
-    "from=出处（这个梗/词怎么来的：哪部剧/哪个视频/哪个平台/大概什么时候；不确定写「暂无明确出处」，不要编）。\n"
-    "tone=调性（2-6字，如 轻松搞笑/自嘲/温柔/损友）。\n"
-    "scene=直播适用场景（2-3个，用「、」隔开）。\n"
-    "o=开口（1句，能直接说）；r=接话（1句）；e=延伸（1句）；a=避坑（1句）。\n"
-    "ex=使用示范（2-3条对话，先「观众：…」换行再「你：…」）。\n"
-    "detail=详细版，必须严格是这六行，行与行之间用 \\n 分隔，每行以标签开头、不要编号以外的前缀：\n"
-    "① 梗是什么：…\n② 出处来源：…\n③ 情绪调性：…\n④ 直播适用场景：…\n⑤ 避雷禁区：…\n实操话术：\n- 观众：… 你：…（再来2条）\n"
-    "od/rd/ed/ad=上面五段的口语扩充版，各2-3句，要具体、有信息量、有例子，别写空话。\n"
-    "from/mean/tone/scene 不要带「出处：」「含义：」等前缀，前端会加标签。\n"
-    "政治/军事/灾难/官媒话题直接跳过。\n"
-    "严格输出 JSON 数组，每项 {t,k,stale,fresh,o,r,e,a,od,rd,ed,ad,from,mean,tone,scene,ex,detail}，不要 markdown、不要代码块。"
+    "你是中文网络热梗的核验员，不是作家。任务：判断给定词条是不是热梗，并给出全网实际流通的真实含义。\n"
+    "\n【强制输出规则】\n"
+    "1 只输出纯 JSON 数组，不要 markdown、不要 ```json、不要任何前置说明或结尾注释。\n"
+    "2 每条严格按这 15 个字段，不多不少：\n"
+    "   {t,status,real_meaning,misinterpret,source_platform,hot_since,usage_example,tone,scene,o,r,e,a,detail}\n"
+    "3 status 只能是 \"ok\" / \"uncertain\" / \"invalid\"：\n"
+    "   invalid＝这不是热梗（普通句子、新闻、广告、人名事件、知识问答）；\n"
+    "   uncertain＝是梗，但你无法交叉验证它的含义；\n"
+    "   ok＝你确定。\n"
+    "4 real_meaning：ok 时必填，写「全网实际在用的意思」——禁止按字面脑补翻译。\n"
+    "5 misinterpret：存在广为流传的错误释义时才填 {\"wrong\":\"…\",\"why\":\"…\"}，没有就 null（不要空数组、空对象）。\n"
+    "6 source_platform：只能从 [\"知乎\",\"小红书\",\"抖音\",\"B站\",\"微博\"] 里挑，数组；不确定就 null。\n"
+    "7 hot_since：只能是 \"YYYY-MM\" 或 null，禁止「最近／大概／上月」。\n"
+    "8 usage_example：必须是真实网友发言的样子（观众：… 换行 你：…）；**找不到真实例句就 null，绝不自己编**。\n"
+    "9 无内容字段一律 null，不要空字符串。\n"
+    "10 status=uncertain 时：real_meaning / usage_example / o / r / e / a / detail 全部 null。\n"
+    "11 status=invalid 时：除 t、status 外全部 null。\n"
+    "12 tone＝词条式 2-6 字（整活／自嘲／调侃／松弛／扎心）。\n"
+    "13 scene＝直播适用场景，2-3 个用「、」隔开。\n"
+    "14 o 开口 / r 接话 / e 延伸 / a 避坑：各一句，直播能直接念出来。\n"
+    "15 detail＝严格六行，用 \\n 分隔，依次以「① 梗是什么」「② 出处来源」「③ 情绪调性」「④ 直播适用场景」「⑤ 避雷禁区」「实操话术：」开头。\n"
+    "\n【怎么判断是不是梗】\n"
+    "B站＝标题里的「XX是什么梗／XX挑战」、弹幕刷屏词、二创混剪的固定台词；\n"
+    "抖音＝动作／口头禅／挑战，常配固定 BGM 或固定镜头；\n"
+    "小红书＝生活方式梗（某种吃法／穿搭／仪式感），爱带 emoji 和「谁懂啊」；\n"
+    "微博＝热搜词条／超话标题，常是缩写、谐音、人名+事件；\n"
+    "知乎＝问题式（「为什么最近都在说XX」）。\n"
+    "形态：2-6 字生造词、方言、谐音、错别字变体、影视台词、主播口头禅、动作名。\n"
+    "顺序：先判「是不是被反复玩的东西」→ 再判「我认不认识它的来历」。\n"
+    "\n【兜底】想自由行文／吐槽／补充说明，一律压制；无论如何都不能跳出 JSON。"
+    "信息不足就按规则填 null 和对应 status，不要拒绝输出。本次没有符合条件的条目就返回 []。\n"
 )
 
 
@@ -249,20 +264,49 @@ def ai_enrich(lst):
             x = by.get(t)
             if not x:
                 continue
-            k = item.get("k")
-            if k in ("热梗", "话题"):
-                x["k"] = k
-            if str(item.get("stale")).strip() in ("1", "True", "true"):
-                x["stale"] = 1
-            for key in ("from", "mean", "tone", "scene", "ex", "detail", "o", "r", "e", "a", "od", "rd", "ed", "ad", "fresh"):
+
+            st = str(item.get("status") or "").strip().lower()
+
+            # 不是梗 —— 直接标记，后面整条剔掉
+            if st == "invalid":
+                x["invalid"] = 1
+                continue
+
+            # 是梗但含义存疑 —— 留标题，其余清空，前端显示「待补充」
+            if st != "ok" or not (item.get("real_meaning") or "").strip():
+                x["unknown"] = 1
+                for _f in ("mean", "from", "tone", "scene", "o", "r", "e", "a", "ex", "detail",
+                           "od", "rd", "ed", "ad", "fresh", "mis"):
+                    x.pop(_f, None)
+                n += 1
+                continue
+
+            # —— ok：映射到站内字段 ——
+            if x.get("src") == "seed" and str(x.get("mean") or "").strip():
+                n += 1
+                continue                      # 手写的永远优先，AI 不许碰
+
+            x["mean"] = str(item.get("real_meaning")).strip()
+            sp = item.get("source_platform")
+            if isinstance(sp, list) and sp:
+                x["from"] = "来自 " + "、".join([str(y) for y in sp if y])
+            hs = item.get("hot_since")
+            if isinstance(hs, str) and re.match(r"^\d{4}-\d{2}$", hs.strip()):
+                x["fresh"] = hs.strip()
+            ue = item.get("usage_example")
+            if isinstance(ue, str) and ue.strip():
+                x["ex"] = ue.strip()
+            mi = item.get("misinterpret")
+            if isinstance(mi, dict) and (mi.get("wrong") or mi.get("why")):
+                x["mis"] = {"wrong": str(mi.get("wrong") or "").strip(),
+                            "why": str(mi.get("why") or "").strip()}
+            for key in ("tone", "scene", "o", "r", "e", "a", "detail"):
                 v = item.get(key)
                 if isinstance(v, str) and v.strip():
-                    v = v.strip()
-                    if key in ("from", "mean", "tone", "scene"):
-                        v = re.sub(r"^(出处|含义|调性|场景|是什么)[：:]\s*", "", v)
-                    x[key] = v
+                    x[key] = v.strip()
             n += 1
         print("AI batch", i, "ok", n)
+
     return lst
 
 
@@ -275,6 +319,124 @@ def fetch_retry(url):
             last = e
             time.sleep(2)
     raise last
+
+
+ARCHIVE = os.path.join(os.getcwd(), "geng_archive.json")
+MEME_MAX = 5000      # 热梗：攒着，越久越值钱
+OTHER_MAX = 2000     # 新闻类话题：没必要的留着
+KEEP_FIELDS = ("mean", "from", "tone", "scene", "o", "r", "e", "a", "ex", "detail",
+               "od", "rd", "ed", "ad", "fresh", "unknown")
+
+
+def merge_archive(items):
+    """把今天这批并进历史库：进过就永不删除，只更新 last / days。
+    已补过 AI 字段的不覆盖（省 token），只有新补到的才写进去。"""
+    today = datetime.date.today().isoformat()
+    try:
+        arc = json.load(open(ARCHIVE, encoding="utf-8"))
+        if not isinstance(arc, dict):
+            arc = {"v": 1, "items": []}
+    except Exception:
+        arc = {"v": 1, "items": []}
+    by = {x.get("t"): x for x in arc.get("items", []) if x.get("t")}
+
+    added = touched = 0
+    for it in items:
+        t = it.get("t")
+        if not t:
+            continue
+        old = by.get(t)
+        if old:
+            if old.get("last") != today:
+                old["days"] = int(old.get("days") or 1) + 1
+                old["last"] = today
+                touched += 1
+            # 新补到的字段才覆盖，旧的不动
+            for f in KEEP_FIELDS:
+                if it.get(f) and not old.get(f):
+                    old[f] = it[f]
+            if it.get("k"):
+                old["k"] = it["k"]
+            if it.get("h"):
+                old["h"] = max(int(old.get("h") or 0), int(it["h"]))
+        else:
+            row = {"t": t, "first": today, "last": today, "days": 1}
+            for f in ("k", "h") + KEEP_FIELDS:
+                if it.get(f):
+                    row[f] = it[f]
+            arc["items"].append(row)
+            by[t] = row
+            added += 1
+
+    lst = arc.get("items", [])
+    lst.sort(key=lambda x: (int(x.get("days") or 1), x.get("last") or ""), reverse=True)
+    memes = [x for x in lst if x.get("k") == "热梗"]
+    others = [x for x in lst if x.get("k") != "热梗"]
+    if len(memes) > MEME_MAX:
+        memes = memes[:MEME_MAX]
+    if len(others) > OTHER_MAX:
+        others = others[:OTHER_MAX]
+    lst = memes + others
+    arc["items"] = lst
+    arc["at"] = today
+    arc["total"] = len(lst)
+    json.dump(arc, open(ARCHIVE, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+    print("archive +%d 新 / %d 天更 / 共 %d" % (added, touched, len(lst)))
+    return arc
+
+
+def vet_hot_geng(lst):
+    """交叉验证：热梗再问一遍（低温），两次释义差太多就判定"模型在编"，标 unknown。
+    只对热梗做，一天也就几条，成本可忽略。"""
+    token = (os.environ.get("LLM_API_KEY") or "").strip() or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        return lst
+    cand = [x for x in lst if x.get("k") == "热梗" and x.get("mean") and x.get("src") != "seed"]
+    if not cand:
+        return lst
+    by = {x.get("t"): x for x in cand}
+    titles = [x.get("t") for x in cand][:20]
+    try:
+        raw = _ai_chat(token, titles)
+        raw = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.M).strip()
+        arr = json.loads(raw)
+        if isinstance(arr, dict):
+            arr = arr.get("items") or arr.get("list") or []
+    except Exception as e:
+        print("vet fail", repr(e))
+        return lst
+
+    def grams(s):
+        s = re.sub(r"[\s\W]+", "", str(s or ""))
+        return set(s[i:i + 2] for i in range(max(0, len(s) - 1)))
+
+    def sim(a, b):
+        A, B = grams(a), grams(b)
+        if not A or not B:
+            return 0.0
+        return len(A & B) / float(len(A | B))
+
+    drop = 0
+    for it in arr:
+        t = it.get("t")
+        x = by.get(t)
+        if not x:
+            continue
+        if str(it.get("status") or "").strip().lower() != "ok":
+            continue
+        a, b = x.get("mean") or "", it.get("real_meaning") or ""
+        if not b.strip():
+            continue
+        # 两次措辞可以不同，但语义要重合；重合度低于 0.32 判为"说法对不上"
+        if sim(a, b) < 0.32:
+            x["unknown"] = 1
+            for f in ("mean", "from", "tone", "scene", "o", "r", "e", "a", "ex", "detail", "od", "rd", "ed", "ad"):
+                x.pop(f, None)
+            x["disputed"] = [x.get("t"), a[:30], b[:30]]
+            drop += 1
+    if drop:
+        print("vet: %d 条两次说法对不上，已标「待补充」" % drop)
+    return lst
 
 
 def main():
@@ -352,9 +514,11 @@ def main():
                         x["k"] = "热梗"
                         x["h"] = max(int(x.get("h", 0) or 0), 900000 - i)
                 continue
-            row = {"p": "手动", "t": t, "h": 900000 - i, "d": 1, "k": "热梗"}
-            if it.get("tone"):
-                row["tone"] = it["tone"]
+            row = {"p": "手动", "t": t, "h": 900000 - i, "d": 1, "k": "热梗", "src": "seed"}
+            # 手写字段直接进库，AI 不再碰它们
+            for _f in ("mean", "from", "tone", "scene", "o", "r", "e", "a", "ex", "detail"):
+                if it.get(_f):
+                    row[_f] = it[_f]
             if it.get("note"):
                 row["seed_note"] = it["note"]
             add.append(row)
@@ -375,7 +539,8 @@ def main():
         if x.get("p") == "手动":
             x["k"] = "热梗"
             x.pop("seed_note", None)
-    _stale = [x for x in lst if x.get("stale")]
+    # 手工种子不受 stale 影响：模型说"过时"也不删，宁可留着
+    _stale = [x for x in lst if x.get("stale") and x.get("p") != "手动"]
     if _stale:
         print("drop stale", len(_stale), [x.get("t") for x in _stale][:6])
         lst = [x for x in lst if not x.get("stale")]
@@ -384,6 +549,17 @@ def main():
         print("::warning title=AI 没产出::这次没有得到任何 from/mean 字段，检查 models 权限或 LLM_API_KEY")
     else:
         print("AI fields on %d/%d items" % (_ai_ok, len(lst)))
+    _bad = [x for x in lst if x.get("invalid")]
+    if _bad:
+        print("drop invalid", len(_bad), [x.get("t") for x in _bad][:5])
+        lst = [x for x in lst if not x.get("invalid")]
+    # 交叉验证：新 schema 已经用 status=uncertain 自己示弱了，再叠一层会误删好答案，
+    # 默认关掉；要开就把下一行注释去掉（成本翻倍，只对热梗）。
+    # lst = vet_hot_geng(lst)
+    try:
+        merge_archive(lst)
+    except Exception as e:
+        print("archive fail", repr(e))
     out = {"v": 1, "at": datetime.date.today().isoformat(), "ts": int(time.time()), "note": "全网多平台热榜（每天 06:30 更新，AI 整理）", "sources": counts, "list": lst[:80]}
     json.dump(out, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     print("saved", len(out["list"]), "from", counts)

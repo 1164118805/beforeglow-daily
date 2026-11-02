@@ -110,6 +110,52 @@ def fetch(url):
         return json.loads(r.read().decode("utf-8"))
 
 
+GENG_NOISE = re.compile(r"【[^】]{1,10}】|\[[^\]]{1,10}\]|（[^）]{0,6}(?:梗|百科|学堂|音乐志)[^）]{0,6}）|\([^)]{0,6}(?:梗|百科)[^)]{0,6}\)")
+
+
+def clean_geng_title(t):
+    """B站二创标题长这样：「【梗百科】"外公的脑袋不够用"是什么梗，归寂你怎么不多长40个脑袋？」
+    要的是里面那个梗本身。顺序很关键：**先按「是什么梗」切，再退回引号**——
+    反过来的话，正文里随便一个引号都会把梗顶掉（"草碧青孩是什么梗？中国抽象"自卫摇滚"…" 会切出"自卫摇滚"）。"""
+    raw = str(t or "").strip()
+    if not raw:
+        return raw
+
+    x = GENG_NOISE.sub("", raw).strip()
+    x = re.sub(r"^(?:梗百科之|梗百科|热梗百科|梗学堂[:：]?)", "", x).strip()
+
+    BAD_TAIL = "我你他她它的了是，,。、？！?!"
+
+    def ok(v):
+        v = v.strip(" ：:，,。.、？！?!「」『』“”\"'")
+        if not (2 <= len(v) <= 14):
+            return None
+        if not re.search(r"[\u4e00-\u9fa5]", v):
+            return None
+        if v[-1] in BAD_TAIL:          # 明显被切断了（"热梗猜影子，猜猜我"）
+            return None
+        if "猜猜" in v or "是谁" in v:
+            return None
+        return v
+
+    # 1) 有「是什么梗 / 是谁 / 什么梗」的，切掉标记及后面的一切
+    parts = re.split(r"(?:是什么梗|是啥梗|是什么意思|是什么|是谁啊|是谁|啥梗|什么梗)", x, maxsplit=1)
+    if len(parts) > 1:
+        v = ok(parts[0])
+        if v:
+            return v
+
+    # 2) 退一步：引号里的（只在没有标记、或标记前切不出来时才用）
+    m = re.search(r"[「『“\"]([^」』”\"]{2,16})[」』”\"]", x)
+    if m:
+        v = ok(m.group(1))
+        if v:
+            return v
+
+    # 3) 实在切不出来就原样保留（宁可长，不要错）
+    return raw
+
+
 def titles(d):
     if not d:
         return []
@@ -129,6 +175,8 @@ def titles(d):
         else:
             continue
         t = re.sub(r"^#+|#+$", "", str(t)).replace("\n", " ").strip()
+        if "梗" in t:
+            t = clean_geng_title(t)
         if t and len(t) <= 40 and len(re.findall(r"[\u4e00-\u9fa5]", t)) >= 3 and not BAD.search(t):
             out.append(t)
     return out
@@ -285,6 +333,13 @@ def ai_enrich(lst):
             if x.get("src") == "seed" and str(x.get("mean") or "").strip():
                 n += 1
                 continue                      # 手写的永远优先，AI 不许碰
+            if x.get("lock"):
+                # 被锁的词（AI 反复写错）：模型说 ok 也不采信，保持待补充
+                x["unknown"] = 1
+                for _f in ("mean", "from", "tone", "scene", "o", "r", "e", "a", "ex", "detail", "mis", "fresh"):
+                    x.pop(_f, None)
+                n += 1
+                continue
 
             x["mean"] = str(item.get("real_meaning")).strip()
             sp = item.get("source_platform")
@@ -516,7 +571,7 @@ def main():
                 continue
             row = {"p": "手动", "t": t, "h": 900000 - i, "d": 1, "k": "热梗", "src": "seed"}
             # 手写字段直接进库，AI 不再碰它们
-            for _f in ("mean", "from", "tone", "scene", "o", "r", "e", "a", "ex", "detail"):
+            for _f in ("mean", "from", "tone", "scene", "o", "r", "e", "a", "ex", "detail", "lock", "mis"):
                 if it.get(_f):
                     row[_f] = it[_f]
             if it.get("note"):

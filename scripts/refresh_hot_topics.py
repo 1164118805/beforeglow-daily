@@ -113,7 +113,11 @@ def fetch(url):
 def titles(d):
     if not d:
         return []
-    arr = d.get("data") or d.get("result") or d.get("list") or (d if isinstance(d, list) else [])
+    # 注意：list 要先判，否则 d.get 直接抛 AttributeError（bili: 源就是这样整条挂掉的）
+    if isinstance(d, list):
+        arr = d
+    else:
+        arr = d.get("data") or d.get("result") or d.get("list") or []
     if isinstance(arr, dict):
         arr = arr.get("list") or arr.get("data") or []
     out = []
@@ -130,7 +134,10 @@ def titles(d):
     return out
 
 
-AI_URL = os.environ.get("LLM_BASE_URL") or "https://models.github.ai/inference/chat/completions"
+# 兼容两种写法：给完整 endpoint（GitHub Models 那种），或给 base（方舟的 .../api/v3）
+AI_URL = (os.environ.get("LLM_BASE_URL") or "https://models.github.ai/inference/chat/completions").rstrip("/")
+if not AI_URL.endswith("/chat/completions"):
+    AI_URL += "/chat/completions"
 AI_MODEL = os.environ.get("LLM_MODEL") or "openai/gpt-4o-mini"
 AI_SYS = (
     "你是抖音娱乐主播的直播编导。给每个热榜话题写直播时能直接念的口语。不要解释概念，不要教程腔，不要套话，不要「作为一个AI」。\n"

@@ -7,7 +7,7 @@
 - 过滤政治/军事/灾难/官媒，只留娱乐生活类
 - 连续在榜天数写入 d（用于「持续热」）
 """
-import json, os, re, sys, time, datetime, html, urllib.request
+import json, os, re, sys, time, datetime, html, urllib.request, urllib.parse
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
 
@@ -17,6 +17,9 @@ SOURCES = [
     ("微博", "tophub:KqndgxeLl9"),
     ("知乎", "tophub:mproPpoq6O"),
     ("小红书", "rebang:xiaohongshu"),
+    ("B站", "bili:热梗"),
+    ("B站", "bili:什么梗"),
+    ("B站", "bili:梗百科"),
     ("抖音", "https://api.vvhan.com/api/hotlist/douyinHot"),
     ("微博", "https://api.vvhan.com/api/hotlist/wbHot"),
     ("知乎", "https://api.vvhan.com/api/hotlist/zhihuHot"),
@@ -36,7 +39,43 @@ BAD = re.compile(
 )
 
 
+BILI_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+
+
+def bili_search(kw, days=3):
+    """B站搜索（按发布时间倒序）。梗几乎只出现在二创标题里，热榜抓不到。
+    需要先访问首页拿 buvid3 cookie，否则第二次就 412；境外 IP 大概率直接失败，静默跳过。"""
+    import http.cookiejar
+    cj = http.cookiejar.CookieJar()
+    op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+    try:
+        op.open(urllib.request.Request("https://www.bilibili.com/", headers={"User-Agent": BILI_UA}), timeout=15).read()
+    except Exception:
+        pass
+    q = urllib.parse.quote(kw)
+    u = ("https://api.bilibili.com/x/web-interface/search/type?search_type=video"
+         "&keyword=" + q + "&order=pubdate&page=1")
+    req = urllib.request.Request(u, headers={"User-Agent": BILI_UA, "Referer": "https://www.bilibili.com/"})
+    import json as _j
+    d = _j.loads(op.open(req, timeout=20).read().decode("utf-8", "ignore"))
+    if d.get("code") != 0:
+        raise RuntimeError("bili code %s" % d.get("code"))
+    now = time.time()
+    out = []
+    for it in (d.get("data", {}).get("result") or []):
+        pd = int(it.get("pubdate") or 0)
+        if pd and now - pd > days * 86400:
+            continue
+        t = re.sub(r"<[^>]+>", "", it.get("title") or "")
+        t = html.unescape(t).strip()
+        if t:
+            out.append(t)
+    return out
+
+
 def fetch(url):
+    if url.startswith("bili:"):
+        return bili_search(url.split(":", 1)[1])
     if url.startswith("rebang:"):
         key = url.split(":", 1)[1]
         req = urllib.request.Request("https://rebang.today/?tab=" + key, headers={"User-Agent": UA})
@@ -277,6 +316,39 @@ def main():
 
     lst = list(best.values())
     lst.sort(key=lambda x: -x["h"])
+
+    # ── 手工「梗种」：每天无条件并入，优先级最高 ──
+    # 为什么必须有这个：热榜是「新闻」，梗活在评论区与二创标题里，
+    # 而 GitHub Actions 在境外，抖音/微博/小红书的一手接口全被墙，只能靠第三方聚合，
+    # 聚合出来的又全是新闻。所以「闪身步」这类梗，光靠抓永远抓不到，只能人工播一条。
+    seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "geng_seed.json")
+    try:
+        seed = json.load(open(seed_path, encoding="utf-8")).get("items") or []
+    except Exception as e:
+        seed = []
+        print("seed read fail", repr(e))
+    if seed:
+        have = {x.get("t") for x in lst}
+        add = []
+        for i, it in enumerate(seed):
+            t = (it.get("t") or "").strip()
+            if not t:
+                continue
+            if t in have:
+                for x in lst:
+                    if x.get("t") == t:
+                        x["k"] = "热梗"
+                        x["h"] = max(int(x.get("h", 0) or 0), 900000 - i)
+                continue
+            row = {"p": "手动", "t": t, "h": 900000 - i, "d": 1, "k": "热梗"}
+            if it.get("tone"):
+                row["tone"] = it["tone"]
+            if it.get("note"):
+                row["seed_note"] = it["note"]
+            add.append(row)
+        if add:
+            lst = add + lst
+        print("seed merged", len(add), "new /", len(seed), "total")
     try:
         lst = ai_enrich(lst)
         token = (os.environ.get("LLM_API_KEY") or "").strip() or os.environ.get("GITHUB_TOKEN")
@@ -287,6 +359,10 @@ def main():
                 _ai_fill(token, missing)
     except Exception as e:
         print("AI enrich fail", repr(e))
+    for x in lst:
+        if x.get("p") == "手动":
+            x["k"] = "热梗"
+            x.pop("seed_note", None)
     _stale = [x for x in lst if x.get("stale")]
     if _stale:
         print("drop stale", len(_stale), [x.get("t") for x in _stale][:6])

@@ -647,6 +647,34 @@ def main():
     out = {"v": 1, "at": datetime.date.today().isoformat(), "ts": int(time.time()), "note": "全网多平台热榜（每天 06:30 更新，AI 整理）", "sources": counts, "list": lst[:80]}
     json.dump(out, open(OUT, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     print("saved", len(out["list"]), "from", counts)
+
+    # ── 往期归档：每天存一份，站点上能翻前几天的 ──
+    try:
+        day = out.get("at") or datetime.date.today().isoformat()
+        os.makedirs("hot", exist_ok=True)
+        json.dump(out, open(os.path.join("hot", day + ".json"), "w", encoding="utf-8"),
+                  ensure_ascii=False, separators=(",", ":"))
+        idx_p = os.path.join("hot", "index.json")
+        days = []
+        if os.path.exists(idx_p):
+            try:
+                days = json.load(open(idx_p, encoding="utf-8")).get("days") or []
+            except Exception:
+                days = []
+        days = sorted(set([day] + list(days)), reverse=True)[:90]
+        json.dump({"v": 1, "days": days}, open(idx_p, "w", encoding="utf-8"),
+                  ensure_ascii=False, separators=(",", ":"))
+        # 只留最近 90 个文件，别把仓库撑大
+        for f in os.listdir("hot"):
+            if f.endswith(".json") and f != "index.json" and f[:-5] not in days:
+                try:
+                    os.remove(os.path.join("hot", f))
+                except Exception:
+                    pass
+        print("archived", day, "days", len(days))
+    except Exception as e:
+        print("archive day fail", repr(e))
+
     return 0
 
 

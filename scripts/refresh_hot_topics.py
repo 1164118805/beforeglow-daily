@@ -20,12 +20,12 @@ SOURCES = [
     ("B站", "bili:热梗"),
     ("B站", "bili:什么梗"),
     ("B站", "bili:梗百科"),
-    ("抖音", "https://api.vvhan.com/api/hotlist/douyinHot"),
-    ("微博", "https://api.vvhan.com/api/hotlist/wbHot"),
-    ("知乎", "https://api.vvhan.com/api/hotlist/zhihuHot"),
-    ("B站", "https://api.vvhan.com/api/hotlist/bili"),
-    ("抖音", "https://tenapi.cn/v2/douyinhot"),
-    ("知乎", "https://tenapi.cn/v2/zhihuhot"),
+    # 换源（2026-11）：vvhan 的 SSL 证书已过期，tenapi 长期 502 / 握手超时，
+    # 两个源加起来四个平台全挂。codelife 这个聚合接口三个平台都通，
+    # 返回 {code, data:[{title, hotValue, link}]}，titles() 直接能读。
+    ("抖音", "https://api.codelife.cc/api/top/list?lang=cn&id=Jb0vmloB1G"),
+    ("微博", "https://api.codelife.cc/api/top/list?lang=cn&id=KqndgxeLl9"),
+    ("知乎", "https://api.codelife.cc/api/top/list?lang=cn&id=mproPpoq6O"),
 ]
 OUT = os.path.join(os.getcwd(), "hot_topics.json")
 

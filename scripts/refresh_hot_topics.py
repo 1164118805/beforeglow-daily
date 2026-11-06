@@ -212,8 +212,8 @@ AI_SYS = (
     "你是中文网络热梗的核验员，不是作家。任务：判断给定词条是不是热梗，并给出全网实际流通的真实含义。\n"
     "\n【强制输出规则】\n"
     "1 只输出纯 JSON 数组，不要 markdown、不要 ```json、不要任何前置说明或结尾注释。\n"
-    "2 每条严格按这 15 个字段，不多不少：\n"
-    "   {t,status,real_meaning,misinterpret,source_platform,hot_since,usage_example,tone,scene,o,r,e,a,detail}\n"
+    "2 每条严格按这 14 个字段，不多不少：\n"
+    "   {t,status,real_meaning,misinterpret,source_platform,hot_since,usage_example,tone,scene,o,r,e,a}\n"
     "3 status 只能是 \"ok\" / \"uncertain\" / \"invalid\"：\n"
     "   invalid＝这不是热梗（普通句子、新闻、广告、人名事件、知识问答）；\n"
     "   uncertain＝是梗，但你无法交叉验证它的含义；\n"
@@ -224,12 +224,13 @@ AI_SYS = (
     "7 hot_since：只能是 \"YYYY-MM\" 或 null，禁止「最近／大概／上月」。\n"
     "8 usage_example：必须是真实网友发言的样子（观众：… 换行 你：…）；**找不到真实例句就 null，绝不自己编**。\n"
     "9 无内容字段一律 null，不要空字符串。\n"
-    "10 status=uncertain 时：real_meaning / usage_example / o / r / e / a / detail 全部 null。\n"
+    "10 status=uncertain 时：real_meaning / usage_example / o / r / e / a 全部 null。\n"
     "11 status=invalid 时：除 t、status 外全部 null。\n"
     "12 tone＝词条式 2-6 字（整活／自嘲／调侃／松弛／扎心）。\n"
     "13 scene＝直播适用场景，2-3 个用「、」隔开。\n"
     "14 o 开口 / r 接话 / e 延伸 / a 避坑：各一句，直播能直接念出来。\n"
-    "15 detail＝严格六行，用 \\n 分隔，依次以「① 梗是什么」「② 出处来源」「③ 情绪调性」「④ 直播适用场景」「⑤ 避雷禁区」「实操话术：」开头。\n"
+    "15 不要输出 detail 或任何「① 梗是什么 / ② 出处来源 …」形式的整段说明——\n"
+    "   那六行全都是 real_meaning / source_platform / tone / scene / a / o+r 的重复，站点会自己拼。\n"
     "\n【怎么判断是不是梗】\n"
     "B站＝标题里的「XX是什么梗／XX挑战」、弹幕刷屏词、二创混剪的固定台词；\n"
     "抖音＝动作／口头禅／挑战，常配固定 BGM 或固定镜头；\n"
@@ -400,7 +401,7 @@ def fetch_retry(url):
 ARCHIVE = os.path.join(os.getcwd(), "geng_archive.json")
 MEME_MAX = 5000      # 热梗：攒着，越久越值钱
 OTHER_MAX = 2000     # 新闻类话题：没必要的留着
-KEEP_FIELDS = ("mean", "from", "tone", "scene", "o", "r", "e", "a", "ex", "detail",
+KEEP_FIELDS = ("mean", "from", "tone", "scene", "o", "r", "e", "a", "ex",
                "od", "rd", "ed", "ad", "fresh", "unknown")
 
 

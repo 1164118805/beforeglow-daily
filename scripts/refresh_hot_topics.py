@@ -652,7 +652,21 @@ def main():
     try:
         day = out.get("at") or datetime.date.today().isoformat()
         os.makedirs("hot", exist_ok=True)
-        json.dump(out, open(os.path.join("hot", day + ".json"), "w", encoding="utf-8"),
+        # 列表和详情分开存：带 detail 的整份是 41KB，国内链路经常传一半就断；
+        # 列表只留标题/类型/平台/释义（约 10KB），详情单独一份，点开时再取。
+        slim, det = [], {}
+        for x in out["list"]:
+            t = x.get("t")
+            if x.get("detail"):
+                det[t] = x["detail"]
+            slim.append({k: x[k] for k in ("t", "k", "p", "mean", "from", "h", "fresh")
+                         if x.get(k) not in (None, "")})
+        arch = dict(out)
+        arch["list"] = slim
+        json.dump(arch, open(os.path.join("hot", day + ".json"), "w", encoding="utf-8"),
+                  ensure_ascii=False, separators=(",", ":"))
+        json.dump({"_v": 1, "map": det},
+                  open(os.path.join("hot", day + "-d.json"), "w", encoding="utf-8"),
                   ensure_ascii=False, separators=(",", ":"))
         idx_p = os.path.join("hot", "index.json")
         days = []
@@ -666,6 +680,8 @@ def main():
                   ensure_ascii=False, separators=(",", ":"))
         # 只留最近 90 个文件，别把仓库撑大
         for f in os.listdir("hot"):
+            if f.endswith("-d.json"):
+                continue          # 详情文件跟着列表一起留，别被当过期清掉
             if f.endswith(".json") and f != "index.json" and f[:-5] not in days:
                 try:
                     os.remove(os.path.join("hot", f))

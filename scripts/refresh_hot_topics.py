@@ -143,6 +143,13 @@ def clean_geng_title(t):
     x = GENG_NOISE.sub("", raw).strip()
     x = re.sub(r"^(?:梗百科之|梗百科|热梗百科|梗学堂[:：]?)", "", x).strip()
 
+    # 剥掉平台话题标签：「……盘点 #奶蛙 #二创 #表情包」→「……盘点」
+    # 这些是抖音/小红书的话题挂链，不是标题的一部分，摆在卡片上很乱。
+    _stripped = re.sub(r"[#＃][^\s#＃]{1,20}", " ", x)
+    _stripped = re.sub(r"\s{2,}", " ", _stripped).strip(" \t，,、：:")
+    if _stripped and re.search(r"[\u4e00-\u9fa5]{2,}", _stripped):
+        x = _stripped
+
     BAD_TAIL = "我你他她它的了是，,。、？！?!"
 
     def ok(v):

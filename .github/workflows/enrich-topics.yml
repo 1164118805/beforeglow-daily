@@ -50,11 +50,24 @@ jobs:
             python3 scripts/enrich_topics.py --force
           fi
 
+      # 抓当日热榜并写入往期归档 hot/YYYY-MM-DD.json
+      # 之前这一步完全没跑过，所以「往期」永远只有手动生成的那一天
+      - name: Refresh hot topics + archive
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+        run: python3 scripts/refresh_hot_topics.py
+
       - name: Commit if changed
         run: |
           git config user.name "beforeglow-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add topics_ai.json
+          git add hot_topics.json 2>/dev/null || true
+          if [ -d hot ]; then git add hot; fi
           if git diff --staged --quiet; then
             echo "no change"
           else

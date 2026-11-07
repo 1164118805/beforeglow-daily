@@ -32,6 +32,8 @@ TOKEN = (os.environ.get("LLM_API_KEY") or "").strip() or os.environ.get("GITHUB_
 BATCH = 5
 DEADLINE = 45 * 60  # 全流程最多跑 9 分钟，超时就写已有的
 MAX_AGE = 30 * 24 * 3600
+# 单次最多补多少条（防止一次爆掉一整天的 token）；可用环境变量覆盖
+MAX_PER_RUN = int(os.environ.get("MAX_PER_RUN", "60"))
 
 SYS = (
     "你是中文直播编导，服务对象是抖音娱乐主播。给你一批条目标题（话题/词汇/热梗），"
@@ -334,6 +336,10 @@ def main():
     elif old_map:
         items = [x for x in items if x["t"] not in old_map]
         print("skip done:", before - len(items), "remain:", len(items))
+
+    if len(items) > MAX_PER_RUN:
+        print("cap this run: %d -> %d (rest left for next run)" % (len(items), MAX_PER_RUN))
+        items = items[:MAX_PER_RUN]
 
     done, fail = 0, 0
     t0 = time.time()

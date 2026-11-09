@@ -214,7 +214,7 @@ def titles(d):
 AI_URL = (os.environ.get("LLM_BASE_URL") or "https://models.github.ai/inference/chat/completions").rstrip("/")
 if not AI_URL.endswith("/chat/completions"):
     AI_URL += "/chat/completions"
-AI_MODEL = os.environ.get("LLM_MODEL") or "openai/gpt-4o-mini"
+AI_MODEL = os.environ.get("LLM_MODEL") or "doubao-seed-2-1-lite-260915"   # 默认走轻量，省 3 倍
 AI_SYS = (
     "你是中文网络热梗的核验员，不是作家。任务：判断给定词条是不是热梗，并给出全网实际流通的真实含义。\n"
     "\n【强制输出规则】\n"
@@ -285,7 +285,13 @@ FILL_SYS = (
 )
 
 
+DAILY_AI_MAX = int(os.environ.get("DAILY_AI_MAX", "150"))   # 每天最多补多少条，控成本
+
+
 def _ai_fill(token, items):
+    if len(items) > DAILY_AI_MAX:
+        print(f"[cost] 今天要补 {len(items)} 条，只补前 {DAILY_AI_MAX} 条（其余留到明天）")
+        items = items[:DAILY_AI_MAX]
     by = {x["t"]: x for x in items}
     for i in range(0, len(items), 10):
         chunk = items[i:i + 10]

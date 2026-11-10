@@ -113,8 +113,8 @@ def main():
     for k, i in enumerate(picks):
         r = POOL[i]
         created = now - (1 + (k * 3) % 20) * 3600000
-        # 点赞数必须和真实访客量级一致：今夜只有两三个人来过，不能给 20 多个赞
-        likes = 0 if k % 3 else (1 + (i * 7) % 3)
+        # 点赞 1~99：和「今天来过人数」（真实访客 + 基数）同一量级
+        likes = 1 + (i * 37 + k * 11) % 99
         lines.append(
             "INSERT INTO board (uid,uname,nick,anon,av,mood,txt,likes,created,expires,hidden) "
             "VALUES ('mock_%s_%d','','%s',0,%d,'%s','%s',%d,%d,%d,0);" % (

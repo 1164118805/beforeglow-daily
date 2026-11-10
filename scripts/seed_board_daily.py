@@ -17,14 +17,23 @@ def esc(t):
 
 
 def d1(sql):
-    p = subprocess.run(
-        ["npx.cmd" if os.name == "nt" else "npx"] + ["-y", "wrangler@latest", "d1", "execute", DB, "--remote", "--json", "--command", sql],
-        capture_output=True, text=True, timeout=240, env=os.environ.copy())
-    if p.returncode != 0:
-        print(p.stdout[-900:])
-        print(p.stderr[-900:])
-        sys.exit(1)
-    return p.stdout
+    """用临时 .sql 文件执行。
+    坑：--command 只会跑第一条语句，多行 INSERT 会被静默丢掉（只进 1 条）。"""
+    tmp = os.path.join(HERE, "_tmp_board.sql")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(sql if sql.rstrip().endswith(";") else sql + ";")
+    try:
+        p = subprocess.run(
+            ["npx.cmd" if os.name == "nt" else "npx"] + ["-y", "wrangler@latest", "d1", "execute", DB, "--remote", "--json", "--file=" + tmp],
+            capture_output=True, text=True, timeout=300, env=os.environ.copy())
+        if p.returncode != 0:
+            print(p.stdout[-900:])
+            print(p.stderr[-900:])
+            sys.exit(1)
+        return p.stdout
+    finally:
+        try: os.remove(tmp)
+        except Exception: pass
 
 
 def ai_lines(n):

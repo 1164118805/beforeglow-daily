@@ -9,7 +9,12 @@ import os, sys, json, time, random, subprocess, urllib.request
 DB = "beforeglow-db"
 TTL = 7 * 24 * 3600 * 1000
 HERE = os.path.dirname(os.path.abspath(__file__))
-POOL = json.load(open(os.path.join(HERE, "board_pool.json"), encoding="utf-8"))
+_BIG = os.path.join(HERE, "board_pool_big.json")
+_POOL = os.path.join(HERE, "board_pool.json")
+if os.path.exists(_BIG):
+    POOL = json.load(open(_BIG, encoding="utf-8"))
+else:
+    POOL = json.load(open(_POOL, encoding="utf-8"))
 
 
 def esc(t):
@@ -80,6 +85,26 @@ def ai_lines(n):
         return []
 
 
+def d1q(sql):
+    """查询专用：--command 单语句，直接返回 results 数组。
+    --file 模式的 JSON 结构和 --command 不一样，混用会 KeyError: 'id'。"""
+    p = subprocess.run(
+        ["npx.cmd" if os.name == "nt" else "npx"] + ["-y", "wrangler@latest", "d1", "execute", DB,
+         "--remote", "--json", "--command=" + sql],
+        capture_output=True, text=True, timeout=240, env=os.environ.copy())
+    out = p.stdout
+    i = out.find("[")
+    if i < 0:
+        return []
+    try:
+        d = json.loads(out[i:])
+        if isinstance(d, list):
+            return (d[0] or {}).get("results") or []
+        return d.get("results") or []
+    except Exception:
+        return []
+
+
 def main():
     now = int(time.time() * 1000)
     today = time.strftime("%Y%m%d")
@@ -128,11 +153,39 @@ def main():
             "INSERT INTO board (uid,uname,nick,anon,av,mood,txt,likes,created,expires,hidden) "
             "VALUES ('mock_%s_%d','','%s',0,%d,'%s','%s',%d,%d,%d,0);" % (
                 today, i, esc(r["n"]), r["a"], esc(r["m"]),
-                esc(r["t"] + ("\n↳ " + str(r.get("rn") or "有人") + "：" + str(r.get("re")) if (r.get("re") and (i * 7 + k * 3) % 10 < 7) else "")),
+                esc(r["t"]),
                 likes, created, created + TTL))
 
     print("今天插 %d 条" % len(lines))
     d1("\n".join(lines))
+
+    # ── 给今天新插的留言配「别人回的那几句」（写进 board_reply，不动正文）
+    try:
+        _rp = os.path.join(HERE, "reply_pool.json")
+        if os.path.exists(_rp):
+            rpool = json.load(open(_rp, encoding="utf-8"))
+            random.shuffle(rpool)
+            ids = [x["id"] for x in d1q("SELECT id FROM board WHERE uid LIKE 'mock_%s%%';" % today)]
+            ri = 0
+            rl = []
+            for rid in ids:
+                if random.random() > 0.72:
+                    continue
+                for c in range(1 + random.randrange(3)):
+                    if ri >= len(rpool):
+                        break
+                    it = rpool[ri]; ri += 1
+                    rl.append(
+                        "INSERT INTO board_reply (bid,uid,uname,nick,anon,av,txt,created) VALUES "
+                        "(%d,0,'','%s',0,%d,'%s',%d);" % (
+                            rid, esc(it.get("n") or random.choice(["小满", "阿柚", "阿枝", "十一", "楼下的猫", "三点零七", "橘子", "旧手机"])),
+                            (rid * 3 + c) % 12, esc(it["t"]), now - (1 + c) * 900000))
+            if rl:
+                d1("\n".join(rl))
+                print("配了 %d 句回复" % len(rl))
+    except Exception as e:
+        print("配回复失败（不影响留言）:", str(e)[:100])
+
     print("done")
 
 

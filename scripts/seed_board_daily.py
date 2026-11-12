@@ -127,8 +127,9 @@ def main():
         lines.append(
             "INSERT INTO board (uid,uname,nick,anon,av,mood,txt,likes,created,expires,hidden) "
             "VALUES ('mock_%s_%d','','%s',0,%d,'%s','%s',%d,%d,%d,0);" % (
-                today, i, esc(r["n"]), r["a"], esc(r["m"]), esc(r["t"]), likes,
-                created, created + TTL))
+                today, i, esc(r["n"]), r["a"], esc(r["m"]),
+                esc(r["t"] + ("\n\n↳ " + str(r.get("rn") or "有人") + "：" + str(r.get("re")) if r.get("re") else "")),
+                likes, created, created + TTL))
 
     print("今天插 %d 条" % len(lines))
     d1("\n".join(lines))

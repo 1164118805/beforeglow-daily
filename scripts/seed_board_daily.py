@@ -182,22 +182,42 @@ def main():
         _rp = os.path.join(HERE, "reply_pool.json")
         if os.path.exists(_rp):
             rpool = json.load(open(_rp, encoding="utf-8"))
-            random.shuffle(rpool)
-            ids = [x["id"] for x in d1q("SELECT id FROM board WHERE uid LIKE 'mock_%s%%';" % today)]
-            ri = 0
+            # 按主题分组：回复只回应这条留言说的事，不跨主题（不然像串台）
+            by_k = {}
+            for it in rpool:
+                by_k.setdefault(it.get("k") or "live", []).append(it)
+            for lst in by_k.values():
+                random.shuffle(lst)
+            used_txt = set()
+
+            rows = d1q("SELECT id, uid FROM board WHERE uid LIKE 'mock_%s%%';" % today)
             rl = []
-            for rid in ids:
+            for row in rows:
+                rid = row["id"]
                 if random.random() > 0.72:
                     continue
+                # 从 uid 里取回池子索引 → 拿到这条留言的主题
+                try:
+                    idx = int(str(row.get("uid") or "").split("_")[-1])
+                    kind = (POOL[idx].get("k") or "live")
+                except Exception:
+                    kind = "live"
+                cands = by_k.get(kind) or by_k.get("live") or []
                 for c in range(1 + random.randrange(3)):
-                    if ri >= len(rpool):
+                    if not cands:
                         break
-                    it = rpool[ri]; ri += 1
+                    pick = None
+                    for t in cands:
+                        if t["t"] not in used_txt:
+                            pick = t; break
+                    if not pick:
+                        break
+                    used_txt.add(pick["t"])
                     rl.append(
                         "INSERT INTO board_reply (bid,uid,uname,nick,anon,av,txt,created) VALUES "
                         "(%d,0,'','%s',0,%d,'%s',%d);" % (
-                            rid, esc(it.get("n") or random.choice(["小满", "阿柚", "阿枝", "十一", "楼下的猫", "三点零七", "橘子", "旧手机"])),
-                            (rid * 3 + c) % 12, esc(it["t"]), now - (1 + c) * 900000))
+                            rid, esc(pick.get("n") or random.choice(["小满", "阿柚", "阿枝", "十一", "楼下的猫", "三点零七", "橘子", "旧手机"])),
+                            (rid * 3 + c) % 12, esc(pick["t"]), now - (1 + c) * 900000))
             if rl:
                 d1("\n".join(rl))
                 print("配了 %d 句回复" % len(rl))

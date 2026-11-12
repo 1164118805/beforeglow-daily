@@ -10,6 +10,8 @@ DB = "beforeglow-db"
 TTL = 7 * 24 * 3600 * 1000
 HERE = os.path.dirname(os.path.abspath(__file__))
 _BIG = os.path.join(HERE, "board_pool_big.json")
+_NM = os.path.join(HERE, "names_pool.json")
+NAMES_999 = json.load(open(_NM, encoding="utf-8")) if os.path.exists(_NM) else []
 _POOL = os.path.join(HERE, "board_pool.json")
 if os.path.exists(_BIG):
     POOL = json.load(open(_BIG, encoding="utf-8"))
@@ -192,6 +194,20 @@ def main():
 
             rows = d1q("SELECT id, uid FROM board WHERE uid LIKE 'mock_%s%%';" % today)
             rl = []
+            used_nick = set()
+
+            def pick_nick():
+                """从 999 个网名里抽一个当天没用过的（抽不到就加后缀兜底）"""
+                if not NAMES_999:
+                    return random.choice(["小满", "阿柚", "阿枝", "十一", "楼下的猫", "橘子"])
+                for _ in range(40):
+                    nm = random.choice(NAMES_999)
+                    if nm not in used_nick:
+                        used_nick.add(nm)
+                        return nm
+                nm = random.choice(NAMES_999) + str(random.randint(1, 99))
+                used_nick.add(nm)
+                return nm
             for row in rows:
                 rid = row["id"]
                 if random.random() > 0.72:
@@ -216,7 +232,7 @@ def main():
                     rl.append(
                         "INSERT INTO board_reply (bid,uid,uname,nick,anon,av,txt,created) VALUES "
                         "(%d,0,'','%s',0,%d,'%s',%d);" % (
-                            rid, esc(pick.get("n") or random.choice(["小满", "阿柚", "阿枝", "十一", "楼下的猫", "三点零七", "橘子", "旧手机"])),
+                            rid, esc(pick_nick()),
                             (rid * 3 + c) % 12, esc(pick["t"]), now - (1 + c) * 900000))
             if rl:
                 d1("\n".join(rl))

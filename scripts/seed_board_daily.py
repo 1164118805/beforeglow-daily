@@ -142,7 +142,25 @@ def main():
                 today, k, esc(r["n"]), (k * 5) % 8, esc(r["m"]), esc(r["t"]),
                 (k % 3), created, created + TTL))
     remain = n - len(lines)
-    picks = fresh[:remain] if remain > 0 else []
+
+    # 同一天不许出现同名（同一屏两个「不会唱歌的主播」一眼假）
+    used_names, used_head = set(), set()
+    picks = []
+    for _i in fresh:
+        _nm = (POOL[_i].get("n") or "").strip()
+        _tx = (POOL[_i].get("t") or "").strip()
+        _hd = _tx[:10]
+        if _nm and _nm in used_names:
+            continue
+        if _hd and _hd in used_head:      # 同一句开头别出现两次
+            continue
+        if _nm: used_names.add(_nm)
+        if _hd: used_head.add(_hd)
+        picks.append(_i)
+        if len(picks) >= remain:
+            break
+    if len(picks) < remain:                      # 不够就退回不做昵称过滤
+        picks = fresh[:remain]
 
     for k, i in enumerate(picks):
         r = POOL[i]

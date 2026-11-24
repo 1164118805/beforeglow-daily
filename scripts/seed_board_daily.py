@@ -9,7 +9,8 @@ import os, sys, json, time, random, urllib.request, urllib.error
 DB = "beforeglow-db"
 # 2026-11-24 修复：改用 Cloudflare REST API，不再依赖 wrangler/npx
 # （GitHub Actions 上 wrangler 要求 Node>=22.12，而 runner 是 Node 20，直接退出）
-DB_ID = os.environ.get("CLOUDFLARE_D1_ID", "b0aa15c5-338a-42f4-be50-5d344e66de95")
+# 注意：GitHub Actions 未配置 variable 时会注入空字符串，os.environ.get 的默认值不会生效
+DB_ID = os.environ.get("CLOUDFLARE_D1_ID", "").strip() or "b0aa15c5-338a-42f4-be50-5d344e66de95"
 TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
 ACCOUNT = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
 D1_API = "https://api.cloudflare.com/client/v4/accounts/%s/d1/database/%s/query" % (ACCOUNT, DB_ID)

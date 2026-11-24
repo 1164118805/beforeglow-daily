@@ -4,9 +4,15 @@
 用法：python3 scripts/seed_board_daily.py
 需要：CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID（GitHub Actions 里配 secret）
 """
-import os, sys, json, time, random, subprocess, urllib.request
+import os, sys, json, time, random, urllib.request, urllib.error
 
 DB = "beforeglow-db"
+# 2026-11-24 修复：改用 Cloudflare REST API，不再依赖 wrangler/npx
+# （GitHub Actions 上 wrangler 要求 Node>=22.12，而 runner 是 Node 20，直接退出）
+DB_ID = os.environ.get("CLOUDFLARE_D1_ID", "b0aa15c5-338a-42f4-be50-5d344e66de95")
+TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN", "").strip()
+ACCOUNT = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "").strip()
+D1_API = "https://api.cloudflare.com/client/v4/accounts/%s/d1/database/%s/query" % (ACCOUNT, DB_ID)
 TTL = 7 * 24 * 3600 * 1000
 HERE = os.path.dirname(os.path.abspath(__file__))
 _BIG = os.path.join(HERE, "board_pool_big.json")
@@ -23,24 +29,34 @@ def esc(t):
     return str(t).replace("'", "''")
 
 
+def _d1_request(sql):
+    """单条 SQL 走 Cloudflare REST API。返回 result 数组。"""
+    body = json.dumps({"sql": sql}).encode("utf-8")
+    req = urllib.request.Request(
+        D1_API, data=body,
+        headers={"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"},
+        method="POST")
+    with urllib.request.urlopen(req, timeout=90) as r:
+        d = json.loads(r.read().decode("utf-8", "ignore"))
+    if not d.get("success"):
+        raise RuntimeError("D1 返回失败: " + str(d.get("errors"))[:300])
+    return d.get("result") or []
+
+
 def d1(sql):
-    """用临时 .sql 文件执行。
-    坑：--command 只会跑第一条语句，多行 INSERT 会被静默丢掉（只进 1 条）。"""
-    tmp = os.path.join(HERE, "_tmp_board.sql")
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(sql if sql.rstrip().endswith(";") else sql + ";")
-    try:
-        p = subprocess.run(
-            ["npx.cmd" if os.name == "nt" else "npx"] + ["-y", "wrangler@latest", "d1", "execute", DB, "--remote", "--json", "--file=" + tmp],
-            capture_output=True, text=True, timeout=300, env=os.environ.copy())
-        if p.returncode != 0:
-            print(p.stdout[-900:])
-            print(p.stderr[-900:])
+    """执行一条或多条 SQL（按分号拆开逐条发），返回最后一条的 result。
+    坑：wrangler --command 只跑第一条，多行 INSERT 会静默丢掉——REST 逐条发没有这个问题。"""
+    if not TOKEN or not ACCOUNT:
+        print("缺少 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID（GitHub Secrets 未配置）")
+        sys.exit(1)
+    last = []
+    for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+        try:
+            last = _d1_request(stmt)
+        except Exception as e:
+            print("D1 执行失败:", str(e)[:200])
             sys.exit(1)
-        return p.stdout
-    finally:
-        try: os.remove(tmp)
-        except Exception: pass
+    return last
 
 
 def ai_lines(n):
@@ -88,22 +104,14 @@ def ai_lines(n):
 
 
 def d1q(sql):
-    """查询专用：--command 单语句，直接返回 results 数组。
-    --file 模式的 JSON 结构和 --command 不一样，混用会 KeyError: 'id'。"""
-    p = subprocess.run(
-        ["npx.cmd" if os.name == "nt" else "npx"] + ["-y", "wrangler@latest", "d1", "execute", DB,
-         "--remote", "--json", "--command=" + sql],
-        capture_output=True, text=True, timeout=240, env=os.environ.copy())
-    out = p.stdout
-    i = out.find("[")
-    if i < 0:
-        return []
+    """查询专用：REST API 返回 [{results:[...], success:...}]，取 results。"""
     try:
-        d = json.loads(out[i:])
-        if isinstance(d, list):
-            return (d[0] or {}).get("results") or []
-        return d.get("results") or []
-    except Exception:
+        r = _d1_request(sql)
+        if isinstance(r, list) and r:
+            return (r[0] or {}).get("results") or []
+        return []
+    except Exception as e:
+        print("D1 查询失败:", str(e)[:150])
         return []
 
 
@@ -114,9 +122,7 @@ def main():
     # 已经在库里的编号（避免 7 天内重复）
     used = set()
     try:
-        out = d1("SELECT uid FROM board WHERE uid LIKE 'mock_%'")
-        data = json.loads(out)
-        rows = data[0]["results"] if isinstance(data, list) else data["results"]
+        rows = d1q("SELECT uid FROM board WHERE uid LIKE 'mock_%'")
         for r in rows:
             u = str(r.get("uid") or "")
             parts = u.split("_")
